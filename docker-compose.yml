@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: conectai-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: conectai_dev
+    volumes:
+      - conectai_pgdata:/var/lib/postgresql/data
+
+volumes:
+  conectai_pgdata:
