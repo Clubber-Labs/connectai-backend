@@ -1,45 +1,59 @@
-import 'dotenv/config'
-import Fastify from 'fastify'
-import cors from '@fastify/cors'
-import jwt from '@fastify/jwt'
-import multipart from '@fastify/multipart'
-import swagger from '@fastify/swagger'
-import swaggerUi from '@fastify/swagger-ui'
-
-import { usersRoutes } from './modules/users/users.routes'
+import { fastifyCors } from '@fastify/cors'
+import fastifyJwt from '@fastify/jwt'
+import { fastifySwagger } from '@fastify/swagger'
+import ScalarApiReference from '@scalar/fastify-api-reference'
+import { type FastifyReply, type FastifyRequest, fastify } from 'fastify'
+import {
+  jsonSchemaTransform,
+  serializerCompiler,
+  validatorCompiler,
+  type ZodTypeProvider,
+} from 'fastify-type-provider-zod'
 import { authRoutes } from './modules/auth/auth.routes'
-import { eventsRoutes } from './modules/events/events.routes'
 
-const app = Fastify({ logger: true })
+const app = fastify().withTypeProvider<ZodTypeProvider>()
 
-async function bootstrap() {
-  await app.register(cors, { origin: true })
+app.setValidatorCompiler(validatorCompiler)
+app.setSerializerCompiler(serializerCompiler)
 
-  await app.register(jwt, {
-    secret: process.env.JWT_SECRET!,
-  })
+app.register(fastifyCors, {
+  origin: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  credentials: true,
+})
 
-  await app.register(multipart)
+app.register(fastifyJwt, {
+  secret: process.env.JWT_SECRET ?? 'fallback_secret',
+})
 
-  await app.register(swagger, {
-    openapi: {
-      info: { title: 'ConnectAI API', version: '1.0.0' },
-      components: {
-        securitySchemes: {
-          bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
-        },
-      },
+app.decorate(
+  'authenticate',
+  async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      await request.jwtVerify()
+    } catch {
+      reply.status(401).send({ message: 'Unauthorized' })
+    }
+  },
+)
+
+app.register(fastifySwagger, {
+  openapi: {
+    info: {
+      title: 'ConnectAI API',
+      description: 'API documentation for ConnectAI backend',
+      version: '1.0.0',
     },
-  })
+  },
+  transform: jsonSchemaTransform,
+})
 
-  await app.register(swaggerUi, { routePrefix: '/docs' })
+app.register(ScalarApiReference, {
+  routePrefix: '/docs',
+})
 
-  await app.register(usersRoutes, { prefix: '/users' })
-  await app.register(authRoutes, { prefix: '/auth' })
-  await app.register(eventsRoutes, { prefix: '/events' })
+app.register(authRoutes)
 
-  const port = Number(process.env.PORT) || 3333
-  await app.listen({ port, host: '0.0.0.0' })
-}
-
-bootstrap()
+app.listen({ port: 3333, host: '0.0.0.0' }).then(() => {
+  console.log('Server is running on http://localhost:3333')
+})

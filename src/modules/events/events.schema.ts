@@ -1,8 +1,15 @@
 export const createEventSchema = {
   body: {
     type: 'object',
-    required: ['title', 'description', 'date', 'latitude', 'longitude', 'category'],
-    properties: {
+    required: [
+      'title',
+      'description',
+      'date',
+      'latitude',
+      'longitude',
+      'category',
+    ],
+    propertiesc: {
       title: { type: 'string' },
       description: { type: 'string' },
       date: { type: 'string', format: 'date-time' },
