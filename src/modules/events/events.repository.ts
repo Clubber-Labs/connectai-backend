@@ -19,7 +19,12 @@ export async function findEventById(id: string) {
 export async function createEvent(
   data: CreateEventBody & { authorId: string },
 ) {
-  return prisma.event.create({ data })
+  return prisma.event.create({ 
+    data:{
+      ...data,
+      date: new Date(data.date)
+    }
+  })
 }
 
 export async function updateEvent(id: string, data: UpdateEventBody) {

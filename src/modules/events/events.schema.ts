@@ -3,7 +3,7 @@ import { z } from 'zod'
 export const createEventSchema = z.object({
   title: z.string().min(3),
   description: z.string().min(10),
-  date: z.string().datetime(),
+  date: z.coerce.date(),
   latitude: z.number(),
   longitude: z.number(),
   category: z.string().min(2),
@@ -13,7 +13,7 @@ export const createEventSchema = z.object({
 export const updateEventSchema = z.object({
   title: z.string().min(3).optional(),
   description: z.string().min(10).optional(),
-  date: z.string().datetime().optional(),
+  date: z.coerce.date().optional(),
   latitude: z.number().optional(),
   longitude: z.number().optional(),
   category: z.string().min(2).optional(),
