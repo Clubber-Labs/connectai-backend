@@ -1,9 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.eventsRoutes = eventsRoutes;
+const fastify_type_provider_zod_1 = require("fastify-type-provider-zod");
 const events_controller_1 = require("./events.controller");
 const events_schema_1 = require("./events.schema");
-const fastify_type_provider_zod_1 = require("fastify-type-provider-zod");
 async function eventsRoutes(app) {
     app.setValidatorCompiler(fastify_type_provider_zod_1.validatorCompiler);
     app.setSerializerCompiler(fastify_type_provider_zod_1.serializerCompiler);
