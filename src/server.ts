@@ -36,12 +36,9 @@ app.register(fastifyJwt, {
 
 app.decorate(
   'authenticate',
-  async (request: FastifyRequest, reply: FastifyReply) => {
-    try {
-      await request.jwtVerify()
-    } catch {
-      reply.status(401).send({ message: 'Unauthorized' })
-    }
+  async (request: FastifyRequest, _reply: FastifyReply) => {
+    const payload = await request.jwtVerify<{ sub: string }>()
+    request.user = payload
   },
 )
 
