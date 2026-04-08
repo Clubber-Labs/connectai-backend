@@ -10,12 +10,19 @@ import {
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod'
 import { authRoutes } from './modules/auth/auth.routes'
+import { eventsRoutes } from './modules/events/events.routes'
 import { usersRoutes } from './modules/users/users.routes'
 
 const app = fastify().withTypeProvider<ZodTypeProvider>()
 
 app.setValidatorCompiler(validatorCompiler)
 app.setSerializerCompiler(serializerCompiler)
+
+app.setErrorHandler((error: Error, _request, reply) => {
+  const statusCode = (error as {statusCode?: number}).statusCode ?? 500
+  const message = error.message ?? 'Internal Server Error'
+  reply.status(statusCode).send({ message })
+})
 
 app.register(fastifyCors, {
   origin: true,
@@ -54,6 +61,7 @@ app.register(ScalarApiReference, {
 })
 
 app.register(authRoutes)
+app.register(eventsRoutes)
 app.register(usersRoutes)
 
 app.listen({ port: 3333, host: '0.0.0.0' }).then(() => {
