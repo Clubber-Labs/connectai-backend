@@ -1,5 +1,6 @@
-import type { FollowStatus } from '@prisma/client'
 import { prisma } from '../../lib/prisma'
+
+type FollowStatus = 'PENDING' | 'ACCEPTED'
 
 export async function createFollow(
   followerId: string,
@@ -26,7 +27,7 @@ export async function createFollow(
   })
 }
 
-export async function acceptFollowRequest(followId: string) {
+export async function acceptFollow(followId: string) {
   return prisma.$transaction(async (tx) => {
     const follow = await tx.follow.update({
       where: { id: followId },
@@ -73,50 +74,36 @@ export async function findFollow(followerId: string, followingId: string) {
   })
 }
 
-export async function findFollowers(
-  userId: string,
-  limit = 20,
-  cursor?: string,
-) {
+export async function findFollowers(userId: string, limit: number, cursor?: string) {
   return prisma.follow.findMany({
     where: { followingId: userId, status: 'ACCEPTED' },
     take: limit,
     ...(cursor && { skip: 1, cursor: { id: cursor } }),
     orderBy: { id: 'desc' },
     include: {
-      follower: {
-        select: { id: true, name: true, lastname: true, username: true },
-      },
+      follower: { select: { id: true, name: true, lastname: true, username: true } },
     },
   })
 }
 
-export async function findPendingFollowRequests(userId: string) {
-  return prisma.follow.findMany({
-    where: { followingId: userId, status: 'PENDING' },
-    orderBy: { id: 'desc' },
-    include: {
-      follower: {
-        select: { id: true, name: true, lastname: true, username: true },
-      },
-    },
-  })
-}
-
-export async function findFollowing(
-  userId: string,
-  limit = 20,
-  cursor?: string,
-) {
+export async function findFollowing(userId: string, limit: number, cursor?: string) {
   return prisma.follow.findMany({
     where: { followerId: userId, status: 'ACCEPTED' },
     take: limit,
     ...(cursor && { skip: 1, cursor: { id: cursor } }),
     orderBy: { id: 'desc' },
     include: {
-      following: {
-        select: { id: true, name: true, lastname: true, username: true },
-      },
+      following: { select: { id: true, name: true, lastname: true, username: true } },
+    },
+  })
+}
+
+export async function findPendingRequests(userId: string) {
+  return prisma.follow.findMany({
+    where: { followingId: userId, status: 'PENDING' },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      follower: { select: { id: true, name: true, lastname: true, username: true } },
     },
   })
 }

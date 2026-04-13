@@ -1,10 +1,16 @@
 import { z } from 'zod'
 
-export const followUserIdParamSchema = z.object({
+export const followParamSchema = z.object({
   userId: z.uuid('ID inválido'),
 })
 
-export type FollowUserIdParam = z.infer<typeof followUserIdParamSchema>
+export type FollowParam = z.infer<typeof followParamSchema>
+
+export const followRequestParamSchema = z.object({
+  followerId: z.uuid('ID inválido'),
+})
+
+export type FollowRequestParam = z.infer<typeof followRequestParamSchema>
 
 export const followerIdParamSchema = z.object({
   followerId: z.uuid('ID do seguidor inválido'),
