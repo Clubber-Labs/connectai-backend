@@ -13,21 +13,48 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  name      String
-  lastname  String
-  username  String   @unique
-  email     String   @unique
-  password  String
-  phone     String   @unique
-  bio       String?
+  id             String   @id @default(uuid())
+  name           String
+  lastname       String
+  username       String   @unique
+  email          String   @unique
+  password       String
+  phone          String   @unique
+  bio            String?
   // avatarUrl String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  birthdate DateTime
-  events    Event[]
+  isPrivate      Boolean  @default(false)
+  followersCount Int      @default(0)
+  followingCount Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  birthdate      DateTime
+  events         Event[]
+
+  // Relacionamentos para o sistema de follow
+  following Follow[] @relation("follower")
+  followers Follow[] @relation("following")
 
   @@map("users")
+}
+
+enum FollowStatus {
+  PENDING
+  ACCEPTED
+}
+
+model Follow {
+  id          String       @id
+  follower    User         @relation("follower", fields: [followerId], references: [id])
+  followerId  String
+  following   User         @relation("following", fields: [followingId], references: [id])
+  followingId String
+  status      FollowStatus @default(ACCEPTED)
+  createdAt   DateTime     @default(now())
+
+  @@unique([followerId, followingId])
+  @@index([followingId, status, id])
+  @@index([followerId, status, id])
+  @@map("follows")
 }
 
 model Event {

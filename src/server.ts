@@ -11,6 +11,7 @@ import {
 } from 'fastify-type-provider-zod'
 import { authRoutes } from './modules/auth/auth.routes'
 import { eventsRoutes } from './modules/events/events.routes'
+import { followsRoutes } from './modules/follows/follows.routes'
 import { usersRoutes } from './modules/users/users.routes'
 
 const app = fastify().withTypeProvider<ZodTypeProvider>()
@@ -60,6 +61,7 @@ app.register(ScalarApiReference, {
 app.register(authRoutes)
 app.register(eventsRoutes)
 app.register(usersRoutes)
+app.register(followsRoutes)
 
 app.listen({ port: 3333, host: '0.0.0.0' }).then(() => {
   console.log('🔥 Server is running on http://localhost:3333')
