@@ -11,7 +11,7 @@ export const followResponseSchema = z.object({
   followerId: z.string(),
   followingId: z.string(),
   status: z.enum(['PENDING', 'ACCEPTED']),
-  createdAt: z.date(),
+  createdAt: z.coerce.date(),
 })
 
 export type FollowResponse = z.infer<typeof followResponseSchema>

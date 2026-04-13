@@ -70,7 +70,13 @@ export async function getFollowers(
   reply: FastifyReply,
 ) {
   const { limit, cursor } = request.query
-  const followers = await listFollowers(request.params.id, limit, cursor)
+  const requesterId = request.user?.sub
+  const followers = await listFollowers(
+    request.params.id,
+    requesterId,
+    limit,
+    cursor,
+  )
   return reply.send(followers)
 }
 
@@ -82,6 +88,12 @@ export async function getFollowing(
   reply: FastifyReply,
 ) {
   const { limit, cursor } = request.query
-  const following = await listFollowing(request.params.id, limit, cursor)
+  const requesterId = request.user?.sub
+  const following = await listFollowing(
+    request.params.id,
+    requesterId,
+    limit,
+    cursor,
+  )
   return reply.send(following)
 }

@@ -62,28 +62,50 @@ export async function unfollowUser(followerId: string, followingId: string) {
   return deleteFollow(followerId, followingId)
 }
 
-export async function listFollowers(
-  userId: string,
-  limit?: number,
-  cursor?: string,
-) {
+async function ensureCanViewFollowList(userId: string, requesterId?: string) {
   const user = await findUserById(userId)
   if (!user) {
     throw { statusCode: 404, message: 'Usuário não encontrado' }
   }
+
+  if (!user.isPrivate) {
+    return user
+  }
+
+  if (requesterId && requesterId === userId) {
+    return user
+  }
+
+  if (!requesterId) {
+    throw { statusCode: 403, message: 'Perfil privado' }
+  }
+
+  const follow = await findFollow(requesterId, userId)
+  if (follow?.status === 'ACCEPTED') {
+    return user
+  }
+
+  throw { statusCode: 403, message: 'Perfil privado' }
+}
+
+export async function listFollowers(
+  userId: string,
+  requesterId?: string,
+  limit?: number,
+  cursor?: string,
+) {
+  await ensureCanViewFollowList(userId, requesterId)
   const followers = await findFollowers(userId, limit, cursor)
   return followers.map((f) => f.follower)
 }
 
 export async function listFollowing(
   userId: string,
+  requesterId?: string,
   limit?: number,
   cursor?: string,
 ) {
-  const user = await findUserById(userId)
-  if (!user) {
-    throw { statusCode: 404, message: 'Usuário não encontrado' }
-  }
+  await ensureCanViewFollowList(userId, requesterId)
   const following = await findFollowing(userId, limit, cursor)
   return following.map((f) => f.following)
 }
