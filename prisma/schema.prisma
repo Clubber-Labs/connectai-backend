@@ -52,7 +52,7 @@ model Follow {
   followerId  String
   following   User         @relation("following", fields: [followingId], references: [id])
   followingId String
-  status      FollowStatus @default(ACCEPTED)
+  status      FollowStatus @default(PENDING)
   createdAt   DateTime     @default(now())
 
   @@unique([followerId, followingId])
@@ -138,6 +138,7 @@ model Comment {
   eventId   String?
   postId    String?
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   author User   @relation(fields: [authorId], references: [id])
   event  Event? @relation(fields: [eventId], references: [id])
@@ -149,17 +150,19 @@ model Comment {
 }
 
 model Reaction {
-  id      String       @id @default(uuid())
-  type    ReactionType
-  userId  String
-  eventId String?
-  postId  String?
+  id        String       @id @default(uuid())
+  type      ReactionType
+  userId    String
+  eventId   String?
+  postId    String?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
 
   user  User   @relation(fields: [userId], references: [id])
   event Event? @relation(fields: [eventId], references: [id])
   post  Post?  @relation(fields: [postId], references: [id])
 
-  @@unique([userId, eventId])
-  @@unique([userId, postId])
+  @@unique([userId, eventId], map: "reactions_user_event_unique")
+  @@unique([userId, postId], map: "reactions_user_post_unique")
   @@map("reactions")
 }
