@@ -47,23 +47,13 @@ export async function findUserByUsername(username: string) {
 }
 
 export async function createUser(
-  data: Omit<CreateUserBody, 'password'> & {
-    password: string
-  },
+  data: Omit<CreateUserBody, 'password'> & { password: string },
 ) {
-  return prisma.user.create({
-     data: {
-      ...data,
-      birthdate: new Date(data.birthdate)
-     } 
-    })
+  return prisma.user.create({ data })
 }
 
 export async function updateUser(id: string, data: UpdateUserBody) {
-  return prisma.user.update({
-    where: { id },
-    data,
-  })
+  return prisma.user.update({ where: { id }, data })
 }
 
 export async function deleteUser(id: string) {
