@@ -6,19 +6,22 @@ import {
   findAttendancesByEvent,
 } from './attendance.repository'
 
-export async function confirmAttendance(userId: string, eventId: string) {
+export async function confirmAttendance(
+  userId: string,
+  eventId: string,
+  type: 'INTERESTED' | 'CONFIRMED' | 'NOT_INTERESTED',
+) {
   const event = await findEventById(eventId)
   if (!event) {
     throw { statusCode: 404, message: 'Evento não encontrado' }
   }
 
   const existing = await findAttendanceByUserAndEvent(userId, eventId)
-
   if (existing) {
-    throw { statusCode: 409, message: 'Presença já confirmada neste evento' }
+    throw { statusCode: 409, message: 'Você já registrou uma intenção neste evento' }
   }
 
-  return createAttendance(userId, eventId)
+  return createAttendance(userId, eventId, type)
 }
 
 export async function cancelAttendance(userId: string, eventId: string) {

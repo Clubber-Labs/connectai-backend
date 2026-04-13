@@ -28,8 +28,11 @@ model User {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   birthdate      DateTime
-  events         Event[]
+  events      Event[]
   attendances EventAttendance[]
+  posts       Post[]
+  comments    Comment[]
+  reactions   Reaction[]
 
   // Relacionamentos para o sistema de follow
   following Follow[] @relation("follower")
@@ -74,19 +77,89 @@ model Event {
   author      User     @relation(fields: [authorId], references: [id])
 
   attendances EventAttendance[]
+  posts       Post[]
+  comments    Comment[]
+  reactions   Reaction[]
 
   @@map("events")
 }
 
+enum AttendanceType {
+  INTERESTED
+  CONFIRMED
+  NOT_INTERESTED
+}
+
 model EventAttendance {
-  id        String   @id @default(uuid())
+  id        String         @id @default(uuid())
+  type      AttendanceType @default(CONFIRMED)
   userId    String
   eventId   String
-  createdAt DateTime @default(now())
+  createdAt DateTime       @default(now())
 
   user  User  @relation(fields: [userId], references: [id])
   event Event @relation(fields: [eventId], references: [id])
 
   @@unique([userId, eventId])
+  @@index([eventId, createdAt])
   @@map("event_attendances")
+}
+
+enum ReactionType {
+  LIKE
+  LOVE
+  HAHA
+  WOW
+  SAD
+  ANGRY
+}
+
+model Post {
+  id        String   @id @default(uuid())
+  content   String
+  authorId  String
+  eventId   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  author    User       @relation(fields: [authorId], references: [id])
+  event     Event      @relation(fields: [eventId], references: [id])
+  comments  Comment[]
+  reactions Reaction[]
+
+  @@index([eventId, createdAt])
+  @@map("posts")
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  content   String
+  authorId  String
+  eventId   String?
+  postId    String?
+  createdAt DateTime @default(now())
+
+  author User   @relation(fields: [authorId], references: [id])
+  event  Event? @relation(fields: [eventId], references: [id])
+  post   Post?  @relation(fields: [postId], references: [id])
+
+  @@index([eventId, createdAt])
+  @@index([postId, createdAt])
+  @@map("comments")
+}
+
+model Reaction {
+  id      String       @id @default(uuid())
+  type    ReactionType
+  userId  String
+  eventId String?
+  postId  String?
+
+  user  User   @relation(fields: [userId], references: [id])
+  event Event? @relation(fields: [eventId], references: [id])
+  post  Post?  @relation(fields: [postId], references: [id])
+
+  @@unique([userId, eventId])
+  @@unique([userId, postId])
+  @@map("reactions")
 }

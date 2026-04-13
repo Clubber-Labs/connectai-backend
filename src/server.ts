@@ -14,6 +14,10 @@ import { eventsRoutes } from './modules/events/events.routes'
 import { followsRoutes } from './modules/follows/follows.routes'
 import { usersRoutes } from './modules/users/users.routes'
 import { attendanceRoutes } from './modules/attendance/attendance.routes'
+import { postsRoutes } from './modules/posts/posts.routes'
+import { commentsRoutes } from './modules/comments/comments.routes'
+import { reactionsRoutes } from './modules/reactions/reactions.routes'
+import { feedRoutes } from './modules/feed/feed.routes'
 
 const app = fastify().withTypeProvider<ZodTypeProvider>()
 
@@ -64,6 +68,10 @@ app.register(eventsRoutes)
 app.register(usersRoutes)
 app.register(followsRoutes)
 app.register(attendanceRoutes)
+app.register(postsRoutes)
+app.register(commentsRoutes)
+app.register(reactionsRoutes)
+app.register(feedRoutes)
 
 app.listen({ port: 3333, host: '0.0.0.0' }).then(() => {
   console.log('🔥 Server is running on http://localhost:3333')
