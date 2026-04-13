@@ -24,20 +24,15 @@ export async function getEvent(request: FastifyRequest, reply: FastifyReply) {
 }
 
 export async function postEvent(request: FastifyRequest, reply: FastifyReply) {
-  const event = await addEvent(
-    request.body as CreateEventBody,
-    request.user.sub,
-  )
+  const body = request.body as CreateEventBody
+  const event = await addEvent(body, request.user.sub)
   return reply.status(201).send(event)
 }
 
 export async function putEvent(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as EventParams
-  const event = await editEvent(
-    id,
-    request.body as UpdateEventBody,
-    request.user.sub,
-  )
+  const body = request.body as UpdateEventBody
+  const event = await editEvent(id, body, request.user.sub)
   return reply.send(event)
 }
 

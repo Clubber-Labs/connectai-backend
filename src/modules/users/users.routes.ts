@@ -1,5 +1,10 @@
 import type { FastifyInstance } from 'fastify'
 import {
+  serializerCompiler,
+  validatorCompiler,
+  type ZodTypeProvider,
+} from 'fastify-type-provider-zod'
+import {
   deleteUserHandler,
   getUser,
   getUsers,
@@ -13,19 +18,24 @@ import {
 } from './users.schema'
 
 export async function usersRoutes(app: FastifyInstance) {
-  app.get('/users', getUsers)
+  app.setValidatorCompiler(validatorCompiler)
+  app.setSerializerCompiler(serializerCompiler)
 
-  app.get('/users/:id', { schema: { params: userIdParamSchema } }, getUser)
+  const api = app.withTypeProvider<ZodTypeProvider>()
 
-  app.post('/users', { schema: { body: createUserSchema } }, postUser)
+  api.get('/users', getUsers)
 
-  app.put(
+  api.get('/users/:id', { schema: { params: userIdParamSchema } }, getUser)
+
+  api.post('/users', { schema: { body: createUserSchema } }, postUser)
+
+  api.put(
     '/users/:id',
     { schema: { params: userIdParamSchema, body: updateUserSchema } },
     putUser,
   )
 
-  app.delete(
+  api.delete(
     '/users/:id',
     { schema: { params: userIdParamSchema } },
     deleteUserHandler,

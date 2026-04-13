@@ -1,5 +1,10 @@
 import type { FastifyInstance } from 'fastify'
 import {
+  serializerCompiler,
+  validatorCompiler,
+  type ZodTypeProvider,
+} from 'fastify-type-provider-zod'
+import {
   getAttendances,
   postAttendance,
   removeAttendance,
@@ -7,19 +12,24 @@ import {
 import { eventParamsSchema } from './attendance.schema'
 
 export async function attendanceRoutes(app: FastifyInstance) {
-  app.post(
+  app.setValidatorCompiler(validatorCompiler)
+  app.setSerializerCompiler(serializerCompiler)
+
+  const api = app.withTypeProvider<ZodTypeProvider>()
+
+  api.post(
     '/events/:eventId/attendances',
     { schema: { params: eventParamsSchema }, onRequest: [app.authenticate] },
     postAttendance,
   )
 
-  app.delete(
+  api.delete(
     '/events/:eventId/attendances',
     { schema: { params: eventParamsSchema }, onRequest: [app.authenticate] },
     removeAttendance,
   )
 
-  app.get(
+  api.get(
     '/events/:eventId/attendances',
     { schema: { params: eventParamsSchema }, onRequest: [app.authenticate] },
     getAttendances,
