@@ -1,3 +1,4 @@
+import { findEventById } from '../events/events.repository'
 import {
   createAttendance,
   deleteAttendance,
@@ -6,6 +7,11 @@ import {
 } from './attendance.repository'
 
 export async function confirmAttendance(userId: string, eventId: string) {
+  const event = await findEventById(eventId)
+  if (!event) {
+    throw { statusCode: 404, message: 'Evento não encontrado' }
+  }
+
   const existing = await findAttendanceByUserAndEvent(userId, eventId)
 
   if (existing) {
@@ -16,6 +22,11 @@ export async function confirmAttendance(userId: string, eventId: string) {
 }
 
 export async function cancelAttendance(userId: string, eventId: string) {
+  const event = await findEventById(eventId)
+  if (!event) {
+    throw { statusCode: 404, message: 'Evento não encontrado' }
+  }
+
   const existing = await findAttendanceByUserAndEvent(userId, eventId)
 
   if (!existing) {

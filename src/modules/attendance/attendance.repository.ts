@@ -1,6 +1,9 @@
 import { prisma } from '../../lib/prisma'
 
-export async function findAttendanceByUserAndEvent(userId: string, eventId: string) {
+export async function findAttendanceByUserAndEvent(
+  userId: string,
+  eventId: string,
+) {
   return prisma.eventAttendance.findUnique({
     where: {
       userId_eventId: { userId, eventId },

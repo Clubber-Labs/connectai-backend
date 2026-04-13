@@ -17,34 +17,28 @@ export async function getUsers(_request: FastifyRequest, reply: FastifyReply) {
   return reply.send(users)
 }
 
-export async function getUser(
-  request: FastifyRequest<{ Params: UserIdParam }>,
-  reply: FastifyReply,
-) {
-  const user = await getUserById(request.params.id)
+export async function getUser(request: FastifyRequest, reply: FastifyReply) {
+  const { id } = request.params as UserIdParam
+  const user = await getUserById(id)
   return reply.send(user)
 }
 
-export async function postUser(
-  request: FastifyRequest<{ Body: CreateUserBody }>,
-  reply: FastifyReply,
-) {
-  const user = await registerUser(request.body)
+export async function postUser(request: FastifyRequest, reply: FastifyReply) {
+  const user = await registerUser(request.body as CreateUserBody)
   return reply.status(201).send(user)
 }
 
-export async function putUser(
-  request: FastifyRequest<{ Params: UserIdParam; Body: UpdateUserBody }>,
-  reply: FastifyReply,
-) {
-  const user = await editUser(request.params.id, request.body)
+export async function putUser(request: FastifyRequest, reply: FastifyReply) {
+  const { id } = request.params as UserIdParam
+  const user = await editUser(id, request.body as UpdateUserBody)
   return reply.send(user)
 }
 
 export async function deleteUserHandler(
-  request: FastifyRequest<{ Params: UserIdParam }>,
+  request: FastifyRequest,
   reply: FastifyReply,
 ) {
-  await removeUser(request.params.id)
+  const { id } = request.params as UserIdParam
+  await removeUser(id)
   return reply.status(204).send()
 }

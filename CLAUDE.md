@@ -194,6 +194,60 @@ pnpm db:generate  # regenera o Prisma Client
 
 ---
 
+## Padrão RESTful
+
+Todas as rotas devem seguir as convenções REST:
+
+### Nomenclatura de rotas
+
+| Método | Rota | Ação |
+|---|---|---|
+| `GET` | `/resources` | Listar todos |
+| `GET` | `/resources/:id` | Buscar por ID |
+| `POST` | `/resources` | Criar |
+| `PUT` | `/resources/:id` | Atualizar (substituição completa) |
+| `PATCH` | `/resources/:id` | Atualizar (substituição parcial) |
+| `DELETE` | `/resources/:id` | Deletar |
+
+Recursos aninhados (sub-recursos) usam hierarquia na URL:
+
+```
+GET    /events/:eventId/attendances       → listar presenças do evento
+POST   /events/:eventId/attendances       → confirmar presença
+DELETE /events/:eventId/attendances       → cancelar presença
+```
+
+### Status HTTP
+
+| Situação | Status |
+|---|---|
+| Leitura bem-sucedida | `200 OK` |
+| Criação bem-sucedida | `201 Created` |
+| Deleção sem retorno | `204 No Content` |
+| Dados inválidos | `400 Bad Request` |
+| Não autenticado | `401 Unauthorized` |
+| Sem permissão | `403 Forbidden` |
+| Recurso não encontrado | `404 Not Found` |
+| Conflito (duplicado) | `409 Conflict` |
+| Erro interno | `500 Internal Server Error` |
+
+### Tratamento de erros
+
+Erros lançados no service com `throw { statusCode, message }` são capturados pelo error handler global do Fastify registrado no `server.ts`. **Nunca use try/catch nos controllers** — deixe o error handler global tratar.
+
+```ts
+// service.ts ✅
+throw { statusCode: 404, message: 'Usuário não encontrado' }
+
+// controller.ts ✅ — sem try/catch
+export async function getUser(request, reply) {
+  const user = await getUserById(request.params.id)
+  return reply.send(user)
+}
+```
+
+---
+
 ## Documentação da API
 
 Com o servidor rodando, acesse:
