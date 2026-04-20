@@ -6,8 +6,12 @@ export const createEventSchema = z.object({
   date: z.coerce.date(),
   latitude: z.number(),
   longitude: z.number(),
+  address: z.string().optional(),
   category: z.string().min(2),
   isPublic: z.boolean().default(true),
+  imageUrl: z.string().optional(),
+  maxCapacity: z.number().optional(),
+  canceledAt:  z.coerce.date().optional(),
 })
 
 export const updateEventSchema = z.object({
