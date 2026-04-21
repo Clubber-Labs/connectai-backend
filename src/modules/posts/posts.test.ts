@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from '../../test/app'
-import { makeAttendance, makeEvent, makeUser } from '../../test/factories'
+import { makeEvent, makeUser } from '../../test/factories'
 import { testPrisma } from '../../test/prisma'
 
 let app: FastifyInstance
@@ -21,10 +21,9 @@ afterAll(async () => {
 })
 
 describe('POST /events/:eventId/posts', () => {
-  it('participante confirmado cria post', async () => {
+  it('usuário autenticado cria post em evento público', async () => {
     const user = await makeUser()
-    const event = await makeEvent(user.id)
-    await makeAttendance(user.id, event.id, 'CONFIRMED')
+    const event = await makeEvent(user.id, { isPublic: true })
 
     const res = await app.inject({
       method: 'POST',
@@ -40,25 +39,10 @@ describe('POST /events/:eventId/posts', () => {
     })
   })
 
-  it('retorna 403 sem presença CONFIRMED', async () => {
-    const user = await makeUser()
-    const event = await makeEvent(user.id)
-    await makeAttendance(user.id, event.id, 'INTERESTED')
-
-    const res = await app.inject({
-      method: 'POST',
-      url: `/events/${event.id}/posts`,
-      headers: { authorization: `Bearer ${token(app, user.id)}` },
-      body: { content: 'Quero postar' },
-    })
-
-    expect(res.statusCode).toBe(403)
-  })
-
-  it('retorna 403 sem nenhuma presença', async () => {
+  it('retorna 403 em evento privado sem convite', async () => {
     const author = await makeUser()
     const other = await makeUser()
-    const event = await makeEvent(author.id)
+    const event = await makeEvent(author.id, { isPublic: false })
 
     const res = await app.inject({
       method: 'POST',
@@ -69,13 +53,25 @@ describe('POST /events/:eventId/posts', () => {
 
     expect(res.statusCode).toBe(403)
   })
+
+  it('retorna 401 sem autenticação', async () => {
+    const author = await makeUser()
+    const event = await makeEvent(author.id, { isPublic: true })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/events/${event.id}/posts`,
+      body: { content: 'Sem token' },
+    })
+
+    expect(res.statusCode).toBe(401)
+  })
 })
 
 describe('GET /events/:eventId/posts', () => {
   it('lista posts do evento', async () => {
     const user = await makeUser()
     const event = await makeEvent(user.id)
-    await makeAttendance(user.id, event.id, 'CONFIRMED')
 
     await app.inject({
       method: 'POST',
@@ -103,7 +99,6 @@ describe('DELETE /events/:eventId/posts/:postId', () => {
   it('autor deleta o próprio post', async () => {
     const user = await makeUser()
     const event = await makeEvent(user.id)
-    await makeAttendance(user.id, event.id, 'CONFIRMED')
 
     const created = await app.inject({
       method: 'POST',
@@ -126,8 +121,6 @@ describe('DELETE /events/:eventId/posts/:postId', () => {
     const author = await makeUser()
     const other = await makeUser()
     const event = await makeEvent(author.id)
-    await makeAttendance(author.id, event.id, 'CONFIRMED')
-    await makeAttendance(other.id, event.id, 'CONFIRMED')
 
     const created = await app.inject({
       method: 'POST',
@@ -150,7 +143,6 @@ describe('DELETE /events/:eventId/posts/:postId', () => {
     const user = await makeUser()
     const event = await makeEvent(user.id)
     const otherEvent = await makeEvent(user.id)
-    await makeAttendance(user.id, event.id, 'CONFIRMED')
 
     const created = await app.inject({
       method: 'POST',
