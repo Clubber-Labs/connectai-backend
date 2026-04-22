@@ -50,6 +50,7 @@ describe('POST /events/:eventId/invites', () => {
       method: 'POST',
       url: `/events/${event.id}/invites`,
       headers: { authorization: `Bearer ${token(app, author.id)}` },
+      body: {},
     })
 
     expect(res.statusCode).toBe(201)
