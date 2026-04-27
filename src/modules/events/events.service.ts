@@ -1,7 +1,8 @@
-import { ensureEventAccess } from '../event-invites/event-invites.access'
+import { checkEventAccess } from '../event-invites/event-invites.access'
 import {
   createEvent,
   deleteEvent,
+  findEventAccess,
   findEventById,
   findEventsByAuthor,
   findPublicEvents,
@@ -39,9 +40,9 @@ export async function listUserEvents(
 }
 
 export async function getEventById(id: string, requesterId?: string) {
-  await ensureEventAccess(id, requesterId)
   const event = await findEventById(id, requesterId)
   if (!event) throw { statusCode: 404, message: 'Evento não encontrado' }
+  await checkEventAccess(event as { id: string; isPublic: boolean; authorId: string }, requesterId)
   return event
 }
 
@@ -54,17 +55,17 @@ export async function editEvent(
   data: UpdateEventBody,
   requesterId: string,
 ) {
-  const event = await findEventById(id)
-  if (!event) throw { statusCode: 404, message: 'Event not found' }
-  if ((event.authorId as string) !== requesterId)
-    throw { statusCode: 403, message: 'Forbidden' }
+  const event = await findEventAccess(id)
+  if (!event) throw { statusCode: 404, message: 'Evento não encontrado' }
+  if (event.authorId !== requesterId)
+    throw { statusCode: 403, message: 'Você não tem permissão para realizar esta ação' }
   return updateEvent(id, data)
 }
 
 export async function removeEvent(id: string, requesterId: string) {
-  const event = await findEventById(id)
-  if (!event) throw { statusCode: 404, message: 'Event not found' }
-  if ((event.authorId as string) !== requesterId)
-    throw { statusCode: 403, message: 'Forbidden' }
+  const event = await findEventAccess(id)
+  if (!event) throw { statusCode: 404, message: 'Evento não encontrado' }
+  if (event.authorId !== requesterId)
+    throw { statusCode: 403, message: 'Você não tem permissão para realizar esta ação' }
   return deleteEvent(id)
 }

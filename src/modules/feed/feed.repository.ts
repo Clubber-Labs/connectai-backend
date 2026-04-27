@@ -17,40 +17,37 @@ export type FeedReason =
   | { kind: 'friend_commented'; user: FeedUser; preview: string }
   | { kind: 'self_interaction' }
 
+type FriendReactionRow = { eventId: string | null; userId: string; type: string; user: FeedUser }
+type FriendCommentRow = { eventId: string | null; authorId: string; content: string; author: FeedUser }
+
 function resolveReason(
   eventId: string,
+  author: FeedUser,
   authorId: string,
   viewerId: string,
   followingIds: string[],
   userAttendance: string | null,
   userReaction: string | null,
   friendAttendances: { userId: string; type: string; user: FeedUser }[],
-  friendReactionsByEvent: Map<string, { userId: string; type: string; user: FeedUser }[]>,
-  friendCommentsByEvent: Map<string, { authorId: string; content: string; author: FeedUser }[]>,
+  friendReactionsByEvent: Map<string, FriendReactionRow>,
+  friendCommentsByEvent: Map<string, FriendCommentRow>,
 ): FeedReason {
   if (authorId === viewerId) return { kind: 'self_created' }
 
   if (userAttendance !== null || userReaction !== null) return { kind: 'self_interaction' }
 
   if (followingIds.includes(authorId)) {
-    const attending = friendAttendances.find(a => a.userId === authorId)
-    if (attending) return { kind: 'friend_created', user: attending.user }
-    const reacted = (friendReactionsByEvent.get(eventId) ?? []).find(r => r.userId === authorId)
-    if (reacted) return { kind: 'friend_created', user: reacted.user }
-    const commented = (friendCommentsByEvent.get(eventId) ?? []).find(c => c.authorId === authorId)
-    if (commented) return { kind: 'friend_created', user: commented.author }
-    // autor é seguido mas não há interação registrada no take — fallback seguro
-    return { kind: 'friend_created', user: { id: authorId, name: '', lastname: '', username: '' } }
+    return { kind: 'friend_created', user: author }
   }
 
   const attending = friendAttendances[0]
   if (attending) return { kind: 'friend_attending', user: attending.user, type: attending.type }
 
-  const reactions = friendReactionsByEvent.get(eventId) ?? []
-  if (reactions[0]) return { kind: 'friend_reacted', user: reactions[0].user, type: reactions[0].type }
+  const reaction = friendReactionsByEvent.get(eventId)
+  if (reaction) return { kind: 'friend_reacted', user: reaction.user, type: reaction.type }
 
-  const comments = friendCommentsByEvent.get(eventId) ?? []
-  if (comments[0]) return { kind: 'friend_commented', user: comments[0].author, preview: comments[0].content.slice(0, 80) }
+  const comment = friendCommentsByEvent.get(eventId)
+  if (comment) return { kind: 'friend_commented', user: comment.author, preview: comment.content.slice(0, 80) }
 
   return { kind: 'self_interaction' }
 }
@@ -83,7 +80,7 @@ export async function findFeedEvents(
     },
     take: limit,
     ...(cursor && { skip: 1, cursor: { id: cursor } }),
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     include: {
       author: { select: authorSelect },
       attendances: {
@@ -120,68 +117,57 @@ export async function findFeedEvents(
     followingIds.length > 0
       ? prisma.reaction.findMany({
           where: { eventId: { in: eventIds }, userId: { in: followingIds } },
-          include: { user: { select: authorSelect } },
-          orderBy: { createdAt: 'desc' as const },
-          take: followingIds.length * eventIds.length,
+          select: { eventId: true, userId: true, type: true, user: { select: authorSelect } },
+          orderBy: [{ eventId: 'asc' as const }, { createdAt: 'desc' as const }],
+          distinct: ['eventId'],
         })
       : Promise.resolve([]),
     followingIds.length > 0
       ? prisma.comment.findMany({
           where: { eventId: { in: eventIds }, authorId: { in: followingIds } },
-          include: { author: { select: authorSelect } },
-          orderBy: { createdAt: 'desc' as const },
-          take: followingIds.length * eventIds.length,
+          select: { eventId: true, authorId: true, content: true, author: { select: authorSelect } },
+          orderBy: [{ eventId: 'asc' as const }, { createdAt: 'desc' as const }],
+          distinct: ['eventId'],
         })
       : Promise.resolve([]),
   ])
 
   const viewerAttendanceMap = new Map(viewerAttendances.map(a => [a.eventId, a.type]))
-
-  const friendReactionsByEvent = new Map<string, typeof friendReactions>()
-  for (const r of friendReactions) {
-    if (!r.eventId) continue
-    const list = friendReactionsByEvent.get(r.eventId) ?? []
-    list.push(r)
-    friendReactionsByEvent.set(r.eventId, list)
-  }
-
-  const friendCommentsByEvent = new Map<string, typeof friendComments>()
-  for (const c of friendComments) {
-    if (!c.eventId) continue
-    const list = friendCommentsByEvent.get(c.eventId) ?? []
-    list.push(c)
-    friendCommentsByEvent.set(c.eventId, list)
-  }
+  const friendReactionsByEvent = new Map(
+    friendReactions
+      .filter((r): r is typeof r & { eventId: string } => r.eventId !== null)
+      .map(r => [r.eventId, r as FriendReactionRow]),
+  )
+  const friendCommentsByEvent = new Map(
+    friendComments
+      .filter((c): c is typeof c & { eventId: string } => c.eventId !== null)
+      .map(c => [c.eventId, c as FriendCommentRow]),
+  )
 
   return events.map(event => {
-    type R = { type: string }
-    type CommentFull = { id: string; content: string; createdAt: Date; author: FeedUser }
-
-    const e = event as typeof event & { reactions: R[]; comments: CommentFull[] }
+    const { reactions, attendances, comments, ...rest } = event
 
     const userAttendance = viewerAttendanceMap.get(event.id) ?? null
-    const userReaction = e.reactions.length ? e.reactions[0].type : null
-
-    const friendAttendances = e.attendances as unknown as { userId: string; type: string; user: FeedUser }[]
+    const userReaction = reactions.length ? (reactions[0] as { type: string }).type : null
+    const friendAttendanceList = attendances as unknown as { userId: string; type: string; user: FeedUser }[]
 
     const reason = resolveReason(
       event.id,
+      event.author,
       event.authorId,
       viewerId,
       followingIds,
       userAttendance,
       userReaction,
-      friendAttendances,
-      friendReactionsByEvent as unknown as Map<string, { userId: string; type: string; user: FeedUser }[]>,
-      friendCommentsByEvent as unknown as Map<string, { authorId: string; content: string; author: FeedUser }[]>,
+      friendAttendanceList,
+      friendReactionsByEvent,
+      friendCommentsByEvent,
     )
-
-    const { reactions, attendances, comments, ...rest } = e
 
     return {
       ...rest,
-      friendAttendances: friendAttendances.map(a => ({ user: a.user })),
-      recentComments: comments.map(c => ({
+      friendAttendances: friendAttendanceList.map(a => ({ user: a.user })),
+      recentComments: (comments as unknown as { id: string; content: string; createdAt: Date; author: FeedUser }[]).map(c => ({
         id: c.id,
         content: c.content,
         createdAt: c.createdAt,
