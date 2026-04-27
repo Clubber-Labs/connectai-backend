@@ -37,10 +37,10 @@ export async function findFeedEvents(
     include: {
       author: { select: authorSelect },
       attendances: {
-        where: { userId: { in: [...followingIds, viewerId] } },
+        where: { userId: { in: followingIds } },
         include: { user: { select: authorSelect } },
         orderBy: { createdAt: 'desc' as const },
-        take: 4,
+        take: 3,
       },
       reactions: {
         where: { userId: viewerId },
@@ -58,16 +58,22 @@ export async function findFeedEvents(
     },
   })
 
+  if (events.length === 0) return []
+
+  const eventIds = events.map(e => e.id)
+  const viewerAttendances = await prisma.eventAttendance.findMany({
+    where: { eventId: { in: eventIds }, userId: viewerId },
+    select: { eventId: true, type: true },
+  })
+  const viewerAttendanceMap = new Map(viewerAttendances.map(a => [a.eventId, a.type]))
+
   return events.map(event => {
     const { reactions, attendances, comments, ...rest } = event as typeof event & {
       reactions: { type: string }[]
     }
 
-    type AttendanceWithUser = { userId: string; type: string; user: { id: string; name: string; lastname: string; username: string } }
-    const typedAttendances = attendances as unknown as AttendanceWithUser[]
-
-    const userAttendanceRecord = typedAttendances.find(a => a.userId === viewerId)
-    const friendAttendances = typedAttendances.filter(a => a.userId !== viewerId).slice(0, 3)
+    type AttendanceWithUser = { user: { id: string; name: string; lastname: string; username: string } }
+    const friendAttendances = attendances as unknown as AttendanceWithUser[]
 
     return {
       ...rest,
@@ -79,7 +85,7 @@ export async function findFeedEvents(
         author: c.author,
       })),
       userReaction: reactions.length ? reactions[0].type : null,
-      userAttendance: userAttendanceRecord?.type ?? null,
+      userAttendance: viewerAttendanceMap.get(event.id) ?? null,
     }
   })
 }

@@ -136,6 +136,13 @@ export async function findEventsByAuthor(
   return events.map(e => normalizeEvent(e, viewerId))
 }
 
+export async function findEventAccess(id: string) {
+  return prisma.event.findUnique({
+    where: { id },
+    select: { id: true, isPublic: true, authorId: true },
+  })
+}
+
 export async function findEventById(id: string, viewerId?: string) {
   const event = await prisma.event.findUnique({
     where: { id },

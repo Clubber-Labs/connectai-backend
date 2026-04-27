@@ -1,4 +1,4 @@
-import { findEventById } from '../events/events.repository'
+import { findEventAccess } from '../events/events.repository'
 import { findInvite } from './event-invites.repository'
 
 /**
@@ -7,7 +7,7 @@ import { findInvite } from './event-invites.repository'
  * Eventos privados: apenas o autor ou convidados (requer autenticação).
  */
 export async function ensureEventAccess(eventId: string, requesterId?: string) {
-  const event = await findEventById(eventId)
+  const event = await findEventAccess(eventId)
   if (!event) {
     throw { statusCode: 404, message: 'Evento não encontrado' }
   }
