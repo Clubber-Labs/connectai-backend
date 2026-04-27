@@ -3,9 +3,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from '../../test/app'
 import {
   makeAttendance,
+  makeComment,
   makeEvent,
   makeFollow,
   makeInvite,
+  makeReaction,
   makeUser,
 } from '../../test/factories'
 import { testPrisma } from '../../test/prisma'
@@ -105,6 +107,42 @@ describe('GET /feed', () => {
   it('exibe os próprios eventos mesmo sem seguir ninguém', async () => {
     const viewer = await makeUser()
     const event = await makeEvent(viewer.id, { isPublic: true })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/feed',
+      headers: { authorization: `Bearer ${token(app, viewer.id)}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().data.some((e: { id: string }) => e.id === event.id)).toBe(true)
+  })
+
+  it('retorna eventos onde seguido reagiu', async () => {
+    const viewer = await makeUser()
+    const followed = await makeUser()
+    const author = await makeUser()
+    await makeFollow(viewer.id, followed.id)
+    const event = await makeEvent(author.id, { isPublic: true })
+    await makeReaction(followed.id, event.id)
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/feed',
+      headers: { authorization: `Bearer ${token(app, viewer.id)}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().data.some((e: { id: string }) => e.id === event.id)).toBe(true)
+  })
+
+  it('retorna eventos onde seguido comentou', async () => {
+    const viewer = await makeUser()
+    const followed = await makeUser()
+    const author = await makeUser()
+    await makeFollow(viewer.id, followed.id)
+    const event = await makeEvent(author.id, { isPublic: true })
+    await makeComment(followed.id, event.id)
 
     const res = await app.inject({
       method: 'GET',

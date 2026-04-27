@@ -20,6 +20,8 @@ export async function findFeedEvents(
           OR: [
             { authorId: { in: [...followingIds, viewerId] } },
             { attendances: { some: { userId: { in: followingIds } } } },
+            { reactions: { some: { userId: { in: followingIds } } } },
+            { comments: { some: { authorId: { in: followingIds } } } },
           ],
         },
         {
