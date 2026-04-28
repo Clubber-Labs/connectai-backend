@@ -1,4 +1,3 @@
-import path from 'node:path'
 import { fastifyCors } from '@fastify/cors'
 import fastifyJwt from '@fastify/jwt'
 import fastifyMultipart from '@fastify/multipart'
@@ -37,7 +36,7 @@ app.setErrorHandler((error: Error, _request, reply) => {
 
 app.register(fastifyCors, {
   origin: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   credentials: true,
 })
 
@@ -49,7 +48,7 @@ app.register(fastifyMultipart, {
 
 if (env.STORAGE_DRIVER === 'local') {
   app.register(fastifyStatic, {
-    root: path.resolve(__dirname, '../uploads'),
+    root: env.UPLOADS_DIR,
     prefix: '/uploads/',
   })
 }

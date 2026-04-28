@@ -26,4 +26,5 @@ afterEach(async () => {
     testPrisma.follow.deleteMany(),
     testPrisma.user.deleteMany(),
   ])
+  fakeStorage.reset()
 })

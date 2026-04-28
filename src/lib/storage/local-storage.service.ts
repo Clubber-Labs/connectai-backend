@@ -9,7 +9,7 @@ import type {
 } from './storage.interface'
 
 export class LocalStorageService implements IStorageService {
-  private readonly uploadDir = path.resolve(__dirname, '../../../uploads')
+  private readonly uploadDir = env.UPLOADS_DIR
 
   async upload(file: FileData, folderConfig: string): Promise<UploadResult> {
     const fileId = randomUUID()

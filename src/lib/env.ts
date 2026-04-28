@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { z } from 'zod'
 
 const baseSchema = z.object({
@@ -9,6 +10,7 @@ const baseSchema = z.object({
     .default('development'),
   PUBLIC_URL: z.url().default('http://localhost:3333'),
   STORAGE_DRIVER: z.enum(['cloudinary', 'local']).optional(),
+  UPLOADS_DIR: z.string().optional(),
 })
 
 const cloudinarySchema = z.object({
@@ -60,4 +62,5 @@ export const env = {
   NODE_ENV: parsed.NODE_ENV,
   PUBLIC_URL: parsed.PUBLIC_URL,
   STORAGE_DRIVER,
+  UPLOADS_DIR: path.resolve(parsed.UPLOADS_DIR ?? path.join(process.cwd(), 'uploads')),
 } as const
