@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
+import { assertImageMimetype } from '../../lib/uploads'
 import type {
   CreateEventBody,
   EventParams,
@@ -16,7 +17,6 @@ import {
   listUserEvents,
   removeEvent,
 } from './events.service'
-import { validateImageMimetype } from '../../lib/storage/validate-mimetype'
 
 export async function getEvents(request: FastifyRequest, reply: FastifyReply) {
   const query = request.query as ListEventsQuery
@@ -60,7 +60,7 @@ export async function deleteEventHandler(
   reply: FastifyReply,
 ) {
   const { id } = request.params as EventParams
-  await removeEvent(id, request.user.sub)
+  await removeEvent(id, request.user.sub, request.log)
   return reply.status(204).send()
 }
 
@@ -70,20 +70,17 @@ export async function uploadEventImageHandler(
 ) {
   const { id } = request.params as EventParams
   const data = await request.file()
-
   if (!data) {
     throw { statusCode: 400, message: 'Nenhuma imagem foi enviada' }
   }
+  assertImageMimetype(data.mimetype)
 
-  validateImageMimetype(data.mimetype)
-
-  const fileBuffer = await data.toBuffer()
+  const buffer = await data.toBuffer()
   const eventImage = await addEventImage(
     id,
-    fileBuffer,
-    data.filename,
+    buffer,
     request.user.sub,
+    request.log,
   )
-
   return reply.status(201).send(eventImage)
 }

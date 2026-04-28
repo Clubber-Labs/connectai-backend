@@ -51,7 +51,10 @@ type PrismaEvent = Prisma.EventGetPayload<{
   }
 }>
 
-export type NormalizedEvent = Omit<PrismaEvent, 'reactions' | 'attendances' | 'comments'> & {
+export type NormalizedEvent = Omit<
+  PrismaEvent,
+  'reactions' | 'attendances' | 'comments'
+> & {
   recentComments: {
     id: string
     content: string
@@ -62,19 +65,23 @@ export type NormalizedEvent = Omit<PrismaEvent, 'reactions' | 'attendances' | 'c
   userAttendance: string | null
 }
 
-function normalizeEvent(event: PrismaEvent, viewerId?: string): NormalizedEvent {
+function normalizeEvent(
+  event: PrismaEvent,
+  viewerId?: string,
+): NormalizedEvent {
   const { reactions, attendances, comments, ...rest } = event
 
   return {
     ...rest,
-    recentComments: (comments ?? []).map(c => ({
+    recentComments: (comments ?? []).map((c) => ({
       id: c.id,
       content: c.content,
       createdAt: c.createdAt,
       author: c.author,
     })),
     userReaction: viewerId && reactions?.length ? reactions[0].type : null,
-    userAttendance: viewerId && attendances?.length ? attendances[0].type : null,
+    userAttendance:
+      viewerId && attendances?.length ? attendances[0].type : null,
   }
 }
 
@@ -84,7 +91,7 @@ export async function findPublicEvents(
   cursor?: string,
   viewerId?: string,
 ) {
-  const events = await prisma.event.findMany({
+  const events = (await prisma.event.findMany({
     where: {
       isPublic: true,
       ...(filters.category && { category: filters.category }),
@@ -101,9 +108,9 @@ export async function findPublicEvents(
     ...(cursor && { skip: 1, cursor: { id: cursor } }),
     orderBy: [{ date: 'asc' }, { id: 'asc' }],
     include: buildEventIncludes(viewerId),
-  }) as unknown as PrismaEvent[]
+  })) as unknown as PrismaEvent[]
 
-  return events.map(e => normalizeEvent(e, viewerId))
+  return events.map((e) => normalizeEvent(e, viewerId))
 }
 
 /** @deprecated Use findPublicEvents */
@@ -125,15 +132,15 @@ export async function findEventsByAuthor(
     authorId,
     ...(viewerId !== authorId && { isPublic: true }),
   }
-  const events = await prisma.event.findMany({
+  const events = (await prisma.event.findMany({
     where,
     take: limit,
     ...(cursor && { skip: 1, cursor: { id: cursor } }),
     orderBy: [{ date: 'asc' }, { id: 'asc' }],
     include: buildEventIncludes(viewerId),
-  }) as unknown as PrismaEvent[]
+  })) as unknown as PrismaEvent[]
 
-  return events.map(e => normalizeEvent(e, viewerId))
+  return events.map((e) => normalizeEvent(e, viewerId))
 }
 
 export async function findEventAccess(id: string) {
@@ -144,10 +151,10 @@ export async function findEventAccess(id: string) {
 }
 
 export async function findEventById(id: string, viewerId?: string) {
-  const event = await prisma.event.findUnique({
+  const event = (await prisma.event.findUnique({
     where: { id },
     include: buildEventIncludes(viewerId),
-  }) as unknown as PrismaEvent | null
+  })) as unknown as PrismaEvent | null
 
   if (!event) return null
   return normalizeEvent(event, viewerId)
@@ -174,4 +181,11 @@ export async function deleteEvent(id: string) {
 
 export async function createEventImage(data: Prisma.EventImageCreateInput) {
   return prisma.eventImage.create({ data })
+}
+
+export async function findEventImageKeys(eventId: string) {
+  return prisma.eventImage.findMany({
+    where: { eventId },
+    select: { key: true },
+  })
 }

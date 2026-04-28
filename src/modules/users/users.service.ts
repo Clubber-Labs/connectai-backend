@@ -1,16 +1,18 @@
 import { hash } from 'bcryptjs'
-import { imageProcessorService } from '../../lib/image-processor'
-import { storageService } from '../../lib/storage'
+import { deleteUploaded, uploadAvatar } from '../../lib/uploads'
 import {
   createUser,
   deleteUser,
   findAllUsers,
+  findUserAvatarKey,
   findUserByEmail,
   findUserById,
   findUserByUsername,
   updateUser,
 } from './users.repository'
 import type { CreateUserBody, UpdateUserBody } from './users.schema'
+
+type Logger = { error: (msg: string) => void }
 
 export async function listUsers(limit: number, cursor?: string) {
   const users = await findAllUsers(limit, cursor)
@@ -39,10 +41,7 @@ export async function registerUser(data: CreateUserBody) {
 
   const passwordHash = await hash(data.password, 10)
 
-  return createUser({
-    ...data,
-    password: passwordHash,
-  })
+  return createUser({ ...data, password: passwordHash })
 }
 
 export async function editUser(id: string, data: UpdateUserBody) {
@@ -58,34 +57,40 @@ export async function editUser(id: string, data: UpdateUserBody) {
   return updateUser(id, data)
 }
 
-export async function removeUser(id: string) {
-  await getUserById(id)
+export async function removeUser(id: string, logger: Logger) {
+  const current = await findUserAvatarKey(id)
+  if (!current) {
+    throw { statusCode: 404, message: 'Usuário não encontrado' }
+  }
+  if (current.avatarKey) {
+    await deleteUploaded(current.avatarKey, logger)
+  }
   return deleteUser(id)
 }
 
 export async function changeUserAvatar(
   userId: string,
   buffer: Buffer,
-  filename: string,
+  logger: Logger,
 ) {
-  const user = await getUserById(userId)
-
-  // Deletar avatar anterior do storage se existir
-  if (user.avatarUrl) {
-    const oldKey = `users/${userId}/${user.avatarUrl.split('/').pop()}`
-    await storageService.delete(oldKey)
+  const current = await findUserAvatarKey(userId)
+  if (!current) {
+    throw { statusCode: 404, message: 'Usuário não encontrado' }
   }
 
-  const processed = await imageProcessorService.processProfileAvatar(buffer)
+  const uploaded = await uploadAvatar(buffer, userId)
 
-  const uploadResult = await storageService.upload(
-    {
-      buffer: processed.buffer,
-      filename,
-      mimetype: 'image/webp',
-    },
-    `users/${userId}`,
-  )
-
-  return updateUser(userId, { avatarUrl: uploadResult.url })
+  try {
+    const updated = await updateUser(userId, {
+      avatarUrl: uploaded.url,
+      avatarKey: uploaded.key,
+    })
+    if (current.avatarKey) {
+      await deleteUploaded(current.avatarKey, logger)
+    }
+    return updated
+  } catch (err) {
+    await deleteUploaded(uploaded.key, logger)
+    throw err
+  }
 }

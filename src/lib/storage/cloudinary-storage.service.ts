@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { v2 as cloudinary } from 'cloudinary'
+import type { CloudinaryCredentials } from '../env'
 import type {
   FileData,
   IStorageService,
@@ -7,11 +8,12 @@ import type {
 } from './storage.interface'
 
 export class CloudinaryStorageService implements IStorageService {
-  constructor() {
+  constructor(credentials: CloudinaryCredentials) {
     cloudinary.config({
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-      api_key: process.env.CLOUDINARY_API_KEY,
-      api_secret: process.env.CLOUDINARY_API_SECRET,
+      cloud_name: credentials.cloudName,
+      api_key: credentials.apiKey,
+      api_secret: credentials.apiSecret,
+      secure: true,
     })
   }
 
@@ -27,7 +29,9 @@ export class CloudinaryStorageService implements IStorageService {
         },
         (error, result) => {
           if (error || !result) {
-            return reject(error || new Error('Upload to Cloudinary failed'))
+            return reject(
+              error || new Error('Falha no upload para o Cloudinary'),
+            )
           }
 
           resolve({
@@ -42,10 +46,6 @@ export class CloudinaryStorageService implements IStorageService {
   }
 
   async delete(key: string): Promise<void> {
-    try {
-      await cloudinary.uploader.destroy(key)
-    } catch (err) {
-      console.error(`Cloudinary Delete Error (${key}):`, err)
-    }
+    await cloudinary.uploader.destroy(key)
   }
 }

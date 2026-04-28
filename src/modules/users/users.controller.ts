@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
+import { assertImageMimetype } from '../../lib/uploads'
 import type {
   CreateUserBody,
   ListUsersQuery,
@@ -13,7 +14,6 @@ import {
   registerUser,
   removeUser,
 } from './users.service'
-import { validateImageMimetype } from '../../lib/storage/validate-mimetype'
 
 export async function getUsers(request: FastifyRequest, reply: FastifyReply) {
   const { limit, cursor } = request.query as ListUsersQuery
@@ -36,7 +36,10 @@ export async function postUser(request: FastifyRequest, reply: FastifyReply) {
 export async function putUser(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as UserIdParam
   if (request.user.sub !== id)
-    throw { statusCode: 403, message: 'Você não tem permissão para editar este usuário' }
+    throw {
+      statusCode: 403,
+      message: 'Você não tem permissão para editar este usuário',
+    }
   const user = await editUser(id, request.body as UpdateUserBody)
   return reply.send(user)
 }
@@ -47,8 +50,11 @@ export async function deleteUserHandler(
 ) {
   const { id } = request.params as UserIdParam
   if (request.user.sub !== id)
-    throw { statusCode: 403, message: 'Você não tem permissão para deletar este usuário' }
-  await removeUser(id)
+    throw {
+      statusCode: 403,
+      message: 'Você não tem permissão para deletar este usuário',
+    }
+  await removeUser(id, request.log)
   return reply.status(204).send()
 }
 
@@ -60,15 +66,9 @@ export async function uploadUserAvatar(
   if (!data) {
     throw { statusCode: 400, message: 'Nenhuma imagem foi enviada' }
   }
+  assertImageMimetype(data.mimetype)
 
-  validateImageMimetype(data.mimetype)
-
-  const fileBuffer = await data.toBuffer()
-  const user = await changeUserAvatar(
-    request.user.sub,
-    fileBuffer,
-    data.filename,
-  )
-
+  const buffer = await data.toBuffer()
+  const user = await changeUserAvatar(request.user.sub, buffer, request.log)
   return reply.send(user)
 }

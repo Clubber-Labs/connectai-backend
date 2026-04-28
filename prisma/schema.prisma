@@ -22,6 +22,7 @@ model User {
   phone          String   @unique
   bio            String?
   avatarUrl      String?
+  avatarKey      String?
   isPrivate      Boolean  @default(false)
   followersCount Int      @default(0)
   followingCount Int      @default(0)

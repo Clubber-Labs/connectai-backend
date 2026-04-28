@@ -1,5 +1,4 @@
-import { imageProcessorService } from '../../lib/image-processor'
-import { storageService } from '../../lib/storage'
+import { deleteUploaded, uploadEventImage } from '../../lib/uploads'
 import { checkEventAccess } from '../event-invites/event-invites.access'
 import {
   createEvent,
@@ -7,6 +6,7 @@ import {
   deleteEvent,
   findEventAccess,
   findEventById,
+  findEventImageKeys,
   findEventsByAuthor,
   findPublicEvents,
   updateEvent,
@@ -16,6 +16,8 @@ import type {
   ListEventsQuery,
   UpdateEventBody,
 } from './events.schema'
+
+type Logger = { error: (msg: string) => void }
 
 export async function listEvents(query: ListEventsQuery, viewerId?: string) {
   const { category, dateFrom, dateTo, limit, cursor } = query
@@ -45,7 +47,10 @@ export async function listUserEvents(
 export async function getEventById(id: string, requesterId?: string) {
   const event = await findEventById(id, requesterId)
   if (!event) throw { statusCode: 404, message: 'Evento não encontrado' }
-  await checkEventAccess(event as { id: string; isPublic: boolean; authorId: string }, requesterId)
+  await checkEventAccess(
+    event as { id: string; isPublic: boolean; authorId: string },
+    requesterId,
+  )
   return event
 }
 
@@ -61,54 +66,57 @@ export async function editEvent(
   const event = await findEventAccess(id)
   if (!event) throw { statusCode: 404, message: 'Evento não encontrado' }
   if (event.authorId !== requesterId)
-    throw { statusCode: 403, message: 'Você não tem permissão para realizar esta ação' }
+    throw {
+      statusCode: 403,
+      message: 'Você não tem permissão para realizar esta ação',
+    }
   return updateEvent(id, data)
 }
 
-export async function removeEvent(id: string, requesterId: string) {
+export async function removeEvent(
+  id: string,
+  requesterId: string,
+  logger: Logger,
+) {
   const event = await findEventAccess(id)
   if (!event) throw { statusCode: 404, message: 'Evento não encontrado' }
   if (event.authorId !== requesterId)
-    throw { statusCode: 403, message: 'Você não tem permissão para realizar esta ação' }
-  return deleteEvent(id)
+    throw {
+      statusCode: 403,
+      message: 'Você não tem permissão para realizar esta ação',
+    }
+
+  const images = (await findEventImageKeys(id)) as { key: string }[]
+  await deleteEvent(id)
+  await Promise.all(images.map((img) => deleteUploaded(img.key, logger)))
 }
 
 export async function addEventImage(
   id: string,
-  fileBuffer: Buffer,
-  filename: string,
+  buffer: Buffer,
   requesterId: string,
+  logger: Logger,
 ) {
-  const event = await findEventById(id)
-  if (!event) {
-    throw { statusCode: 404, message: 'Event not found' }
-  }
-  if (event.authorId !== requesterId) {
-    throw { statusCode: 403, message: 'Forbidden' }
-  }
+  const event = await findEventAccess(id)
+  if (!event) throw { statusCode: 404, message: 'Evento não encontrado' }
+  if (event.authorId !== requesterId)
+    throw {
+      statusCode: 403,
+      message: 'Você não tem permissão para realizar esta ação',
+    }
 
-  const processed = await imageProcessorService.processEventGallery(fileBuffer)
-
-  const uploadResult = await storageService.upload(
-    {
-      buffer: processed.buffer,
-      filename,
-      mimetype: 'image/webp',
-    },
-    `events/${id}`,
-  )
+  const uploaded = await uploadEventImage(buffer, id)
 
   try {
     return await createEventImage({
-      url: uploadResult.url,
-      key: uploadResult.key,
-      format: processed.format,
-      size: processed.size,
+      url: uploaded.url,
+      key: uploaded.key,
+      format: uploaded.format,
+      size: uploaded.size,
       event: { connect: { id } },
     })
   } catch (err) {
-    // Rollback: remove a imagem órfã do storage
-    await storageService.delete(uploadResult.key)
+    await deleteUploaded(uploaded.key, logger)
     throw err
   }
 }
