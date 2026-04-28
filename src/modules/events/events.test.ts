@@ -234,6 +234,11 @@ describe('POST /events/:id/images', () => {
     expect(res.json()).toMatchObject({ format: 'webp', eventId: event.id })
     expect(fakeStorage.uploads).toHaveLength(1)
     expect(fakeStorage.uploads[0].key).toContain(`events/${event.id}/`)
+
+    const detail = await app.inject({ method: 'GET', url: `/events/${event.id}` })
+    expect(detail.statusCode).toBe(200)
+    expect(detail.json().images).toHaveLength(1)
+    expect(detail.json().images[0]).toMatchObject({ format: 'webp', order: 0 })
   })
 
   it('retorna 400 sem arquivo', async () => {

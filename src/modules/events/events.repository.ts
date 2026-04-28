@@ -13,6 +13,14 @@ const authorSelect = {
   username: true,
 } as const
 
+const eventImageSelect = {
+  id: true,
+  url: true,
+  format: true,
+  size: true,
+  order: true,
+} as const
+
 function buildEventIncludes(viewerId?: string): Prisma.EventInclude {
   return {
     author: { select: authorSelect },
@@ -23,6 +31,10 @@ function buildEventIncludes(viewerId?: string): Prisma.EventInclude {
       orderBy: { createdAt: 'desc' },
       take: 2,
       include: { author: { select: authorSelect } },
+    },
+    images: {
+      orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+      select: eventImageSelect,
     },
     ...(viewerId && {
       reactions: {
@@ -46,6 +58,7 @@ type PrismaEvent = Prisma.EventGetPayload<{
     comments: {
       include: { author: { select: typeof authorSelect } }
     }
+    images: { select: typeof eventImageSelect }
     reactions: { select: { type: true } }
     attendances: { select: { type: true } }
   }

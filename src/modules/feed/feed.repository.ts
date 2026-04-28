@@ -121,6 +121,16 @@ export async function findFeedEvents(
         take: 2,
         include: { author: { select: authorSelect } },
       },
+      images: {
+        orderBy: [{ order: 'asc' as const }, { createdAt: 'asc' as const }],
+        select: {
+          id: true,
+          url: true,
+          format: true,
+          size: true,
+          order: true,
+        },
+      },
       _count: {
         select: { attendances: true, comments: true, reactions: true },
       },
