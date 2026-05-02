@@ -40,6 +40,7 @@ model User {
   following Follow[] @relation("follower")
   followers Follow[] @relation("following")
 
+  reports Report[] @relation("reporterReports")
   @@map("users")
 }
 
@@ -87,6 +88,7 @@ model Event {
   comments    Comment[]
   reactions   Reaction[]
   invites     EventInvite[]
+  reports Report[]
 
   @@map("events")
 }
@@ -150,7 +152,8 @@ model Comment {
   author User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
   event  Event? @relation(fields: [eventId], references: [id], onDelete: Cascade)
   post   Post?  @relation(fields: [postId], references: [id], onDelete: Cascade)
-
+  reports Report[]
+  
   @@index([eventId, createdAt])
   @@index([postId, createdAt])
   @@map("comments")
@@ -206,20 +209,21 @@ enum ReportStatus {
 }
 
 model Report {
-  id     String @id @default(uuid())
-  reason ReportReason 
-  details String?
-  status  ReportStatus @default(PENDING)
-  createdAt DateTime @default(now())
+  id         String       @id @default(uuid())
+  reason     ReportReason
+  details    String?
+  status     ReportStatus @default(PENDING)
+  createdAt  DateTime     @default(now())
   resolvedAt DateTime?
 
   reporterId String
-  reporter User @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  reporter   User   @relation("reporterReports", fields: [reporterId], references: [id], onDelete: Cascade)
 
-  eventId String?
-  event Event? @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  eventId   String?
+  event     Event?   @relation(fields: [eventId], references: [id], onDelete: SetNull)
+
   commentId String?
-  comment Comment @relation(fields: [commentId], references: [id], onDelete: SetNull)
+  comment   Comment? @relation(fields: [commentId], references: [id], onDelete: SetNull)
 
   @@map("reports")
 }

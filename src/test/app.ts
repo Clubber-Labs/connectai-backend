@@ -14,6 +14,7 @@ import { feedRoutes } from '../modules/feed/feed.routes'
 import { followsRoutes } from '../modules/follows/follows.routes'
 import { postsRoutes } from '../modules/posts/posts.routes'
 import { reactionsRoutes } from '../modules/reactions/reactions.routes'
+import { reportsRoutes } from '../modules/reports/reports.routes'
 import { usersRoutes } from '../modules/users/users.routes'
 
 export function buildApp() {
@@ -60,6 +61,7 @@ export function buildApp() {
   app.register(reactionsRoutes)
   app.register(feedRoutes)
   app.register(eventInvitesRoutes)
+  app.register(reportsRoutes)
 
   return app
 }

@@ -72,3 +72,38 @@ export async function makeInvite(
     data: { eventId, inviterId, invitedId },
   })
 }
+
+export async function makeComment(
+  authorId: string,
+  overrides: { eventId?: string; postId?: string; content?: string } = {},
+) {
+  const id = uid()
+  return testPrisma.comment.create({
+    data: {
+      content: overrides.content ?? `Comment ${id}`,
+      authorId,
+      eventId: overrides.eventId,
+      postId: overrides.postId,
+    },
+  })
+}
+
+export async function makeReport(
+  reporterId: string,
+  overrides: {
+    eventId?: string
+    commentId?: string
+    reason?: 'HATE_SPEECH' | 'SPAM_OR_FRAUD' | 'HARASSMENT' | 'INAPPROPRIATE_CONTENT' | 'OTHER'
+    status?: 'PENDING' | 'REVIEWED' | 'RESOLVED_INVALID' | 'RESOLVED_REMOVED'
+  } = {},
+) {
+  return testPrisma.report.create({
+    data: {
+      reporterId,
+      reason: overrides.reason ?? 'SPAM_OR_FRAUD',
+      status: overrides.status ?? 'PENDING',
+      eventId: overrides.eventId,
+      commentId: overrides.commentId,
+    },
+  })
+}
