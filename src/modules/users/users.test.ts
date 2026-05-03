@@ -26,7 +26,12 @@ describe('PATCH /users/me/avatar', () => {
   it('atualiza avatar do usuário autenticado', async () => {
     const user = await makeUser()
     const png = await tinyPngBuffer()
-    const { body, contentType } = multipartFormData(png, 'file', 'avatar.png', 'image/png')
+    const { body, contentType } = multipartFormData(
+      png,
+      'file',
+      'avatar.png',
+      'image/png',
+    )
 
     const res = await app.inject({
       method: 'PATCH',
@@ -99,7 +104,12 @@ describe('PATCH /users/me/avatar', () => {
 
   it('retorna 401 sem autenticação', async () => {
     const png = await tinyPngBuffer()
-    const { body, contentType } = multipartFormData(png, 'file', 'a.png', 'image/png')
+    const { body, contentType } = multipartFormData(
+      png,
+      'file',
+      'a.png',
+      'image/png',
+    )
 
     const res = await app.inject({
       method: 'PATCH',
@@ -109,5 +119,25 @@ describe('PATCH /users/me/avatar', () => {
     })
 
     expect(res.statusCode).toBe(401)
+  })
+})
+
+describe('rate limit em POST /users', () => {
+  it('retorna 429 após 10 tentativas no mesmo minuto', async () => {
+    for (let i = 0; i < 10; i++) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/users',
+        body: {},
+      })
+      expect(res.statusCode).toBe(400)
+    }
+
+    const blocked = await app.inject({
+      method: 'POST',
+      url: '/users',
+      body: {},
+    })
+    expect(blocked.statusCode).toBe(429)
   })
 })

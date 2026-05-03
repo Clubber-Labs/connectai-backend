@@ -1,6 +1,7 @@
 import { fastifyCors } from '@fastify/cors'
 import fastifyJwt from '@fastify/jwt'
 import fastifyMultipart from '@fastify/multipart'
+import { fastifyRateLimit } from '@fastify/rate-limit'
 import fastifyStatic from '@fastify/static'
 import { fastifySwagger } from '@fastify/swagger'
 import ScalarApiReference from '@scalar/fastify-api-reference'
@@ -12,6 +13,7 @@ import {
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod'
 import { env } from './lib/env'
+import { redis } from './lib/redis'
 import { attendanceRoutes } from './modules/attendance/attendance.routes'
 import { authRoutes } from './modules/auth/auth.routes'
 import { commentsRoutes } from './modules/comments/comments.routes'
@@ -19,6 +21,7 @@ import { eventInvitesRoutes } from './modules/event-invites/event-invites.routes
 import { eventsRoutes } from './modules/events/events.routes'
 import { feedRoutes } from './modules/feed/feed.routes'
 import { followsRoutes } from './modules/follows/follows.routes'
+import { healthRoutes } from './modules/health/health.routes'
 import { postsRoutes } from './modules/posts/posts.routes'
 import { reactionsRoutes } from './modules/reactions/reactions.routes'
 import { usersRoutes } from './modules/users/users.routes'
@@ -40,9 +43,14 @@ app.register(fastifyCors, {
   credentials: true,
 })
 
+app.register(fastifyRateLimit, {
+  global: false,
+  redis: redis ?? undefined,
+})
+
 app.register(fastifyMultipart, {
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limite por arquivo
+    fileSize: 5 * 1024 * 1024,
   },
 })
 
@@ -90,6 +98,7 @@ app.register(ScalarApiReference, {
   routePrefix: '/docs',
 })
 
+app.register(healthRoutes)
 app.register(authRoutes)
 app.register(eventsRoutes)
 app.register(usersRoutes)
@@ -100,6 +109,17 @@ app.register(commentsRoutes)
 app.register(reactionsRoutes)
 app.register(feedRoutes)
 app.register(eventInvitesRoutes)
+
+app.addHook('onClose', async () => {
+  if (redis) await redis.quit()
+})
+
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(signal, async () => {
+    await app.close()
+    process.exit(0)
+  })
+}
 
 app.listen({ port: env.PORT, host: '0.0.0.0' }).then(() => {
   console.log(`🔥 Server is running on http://localhost:${env.PORT}`)

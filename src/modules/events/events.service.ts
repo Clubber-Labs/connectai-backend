@@ -1,3 +1,4 @@
+import { cache } from '../../lib/cache'
 import { deleteUploaded, uploadEventImage } from '../../lib/uploads'
 import { checkEventAccess } from '../event-invites/event-invites.access'
 import {
@@ -9,6 +10,8 @@ import {
   findEventImageKeys,
   findEventsByAuthor,
   findPublicEvents,
+  findViewerStatesForEvents,
+  type SharedEvent,
   updateEvent,
 } from './events.repository'
 import type {
@@ -19,17 +22,68 @@ import type {
 
 type Logger = { error: (msg: string) => void }
 
+type SharedListResult = {
+  data: SharedEvent[]
+  nextCursor: string | null
+}
+
 export async function listEvents(query: ListEventsQuery, viewerId?: string) {
-  const { category, dateFrom, dateTo, limit, cursor } = query
-  const events = await findPublicEvents(
-    { category, dateFrom, dateTo },
-    limit,
-    cursor,
-    viewerId,
+  const cacheKey = cache.key(
+    'events:public',
+    query.category,
+    query.dateFrom?.toISOString(),
+    query.dateTo?.toISOString(),
+    query.limit,
+    query.cursor,
   )
-  const nextCursor =
-    events.length === limit ? (events[events.length - 1].id as string) : null
-  return { data: events, nextCursor }
+
+  let shared = await cache.get<SharedListResult>(cacheKey)
+  if (!shared) {
+    const events = await findPublicEvents(
+      {
+        category: query.category,
+        dateFrom: query.dateFrom,
+        dateTo: query.dateTo,
+      },
+      query.limit,
+      query.cursor,
+    )
+    const nextCursor =
+      events.length === query.limit ? events[events.length - 1].id : null
+    shared = { data: events, nextCursor }
+    await cache.set(cacheKey, shared, 300)
+  }
+
+  return mergeViewerState(shared, viewerId)
+}
+
+async function mergeViewerState(shared: SharedListResult, viewerId?: string) {
+  if (!viewerId) {
+    return {
+      ...shared,
+      data: shared.data.map((e) => ({
+        ...e,
+        userReaction: null,
+        userAttendance: null,
+      })),
+    }
+  }
+
+  const states = await findViewerStatesForEvents(
+    viewerId,
+    shared.data.map((e) => e.id),
+  )
+  return {
+    ...shared,
+    data: shared.data.map((e) => {
+      const state = states.get(e.id)
+      return {
+        ...e,
+        userReaction: state?.reaction ?? null,
+        userAttendance: state?.attendance ?? null,
+      }
+    }),
+  }
 }
 
 export async function listUserEvents(
@@ -55,7 +109,9 @@ export async function getEventById(id: string, requesterId?: string) {
 }
 
 export async function addEvent(data: CreateEventBody, authorId: string) {
-  return createEvent({ ...data, authorId })
+  const event = await createEvent({ ...data, authorId })
+  await cache.invalidate('events:public:*')
+  return event
 }
 
 export async function editEvent(
@@ -70,7 +126,10 @@ export async function editEvent(
       statusCode: 403,
       message: 'Você não tem permissão para realizar esta ação',
     }
-  return updateEvent(id, data)
+
+  const updated = await updateEvent(id, data)
+  await cache.invalidate('events:public:*')
+  return updated
 }
 
 export async function removeEvent(
@@ -89,6 +148,7 @@ export async function removeEvent(
   const images = (await findEventImageKeys(id)) as { key: string }[]
   await Promise.all(images.map((img) => deleteUploaded(img.key, logger)))
   await deleteEvent(id)
+  await cache.invalidate('events:public:*')
 }
 
 export async function addEventImage(
@@ -108,12 +168,14 @@ export async function addEventImage(
   const uploaded = await uploadEventImage(buffer, id)
 
   try {
-    return await createEventImage(id, {
+    const image = await createEventImage(id, {
       url: uploaded.url,
       key: uploaded.key,
       format: uploaded.format,
       size: uploaded.size,
     })
+    await cache.invalidate('events:public:*')
+    return image
   } catch (err) {
     await deleteUploaded(uploaded.key, logger)
     throw err
