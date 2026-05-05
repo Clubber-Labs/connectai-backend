@@ -107,13 +107,9 @@ export async function findPublicEvents(
   const events = (await prisma.event.findMany({
     where: {
       isPublic: true,
-      ...(filters.category && {
-        category: {
-          in: Array.isArray(filters.category)
-            ? filters.category
-            : [filters.category],
-        },
-      }),
+      ...(filters.category && filters.category.length > 0
+        ? { category: { in: filters.category } }
+        : {}),
       ...(filters.dateFrom || filters.dateTo
         ? {
             date: {
