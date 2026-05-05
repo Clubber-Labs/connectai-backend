@@ -5,6 +5,7 @@ const authorSelect = {
   name: true,
   lastname: true,
   username: true,
+  avatarUrl: true,
 } as const
 
 type FeedUser = { id: string; name: string; lastname: string; username: string }

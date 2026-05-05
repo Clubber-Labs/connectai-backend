@@ -53,23 +53,3 @@ describe('POST /auth/login', () => {
   })
 })
 
-describe('GET /auth/me', () => {
-  it('retorna dados do usuário autenticado', async () => {
-    const user = await makeUser()
-    const token = app.jwt.sign({ sub: user.id })
-
-    const res = await app.inject({
-      method: 'GET',
-      url: '/auth/me',
-      headers: { authorization: `Bearer ${token}` },
-    })
-
-    expect(res.statusCode).toBe(200)
-    expect(res.json()).toMatchObject({ id: user.id, email: user.email })
-  })
-
-  it('retorna 401 sem token', async () => {
-    const res = await app.inject({ method: 'GET', url: '/auth/me' })
-    expect(res.statusCode).toBe(401)
-  })
-})

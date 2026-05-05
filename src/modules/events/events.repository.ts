@@ -11,6 +11,7 @@ const authorSelect = {
   name: true,
   lastname: true,
   username: true,
+  avatarUrl: true,
 } as const
 
 const eventImageSelect = {
