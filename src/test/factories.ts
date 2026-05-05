@@ -26,7 +26,7 @@ export async function makeUser(
 
 export async function makeEvent(
   authorId: string,
-  overrides: { isPublic?: boolean } = {},
+  overrides: { isPublic?: boolean; category?: string } = {},
 ) {
   const id = uid()
   return testPrisma.event.create({
@@ -36,7 +36,7 @@ export async function makeEvent(
       date: new Date(Date.now() + 86400000),
       latitude: -25.4,
       longitude: -49.3,
-      category: 'Festa',
+      category: overrides.category ?? 'Festa',
       isPublic: overrides.isPublic ?? true,
       authorId,
     },
