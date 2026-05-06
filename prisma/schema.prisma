@@ -226,10 +226,14 @@ model Report {
   commentId String?
   comment   Comment? @relation(fields: [commentId], references: [id], onDelete: SetNull)
 
+  @@index([reporterId, eventId, status], map: "reports_reporter_event_status_idx")
+  @@index([reporterId, commentId, status], map: "reports_reporter_comment_status_idx")
   @@unique([reporterId, eventId, status], map: "reports_reporter_event_status_unique")
   @@unique([reporterId, commentId, status], map: "reports_reporter_comment_status_unique")
+  
   @@map("reports")
 }
+
 model EventImage {
   id        String   @id @default(uuid())
   url       String

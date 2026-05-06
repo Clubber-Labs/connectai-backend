@@ -108,7 +108,7 @@ describe('POST /comments/:commentId/report', () => {
     const author = await makeUser()
     const reporter = await makeUser()
     const event = await makeEvent(author.id)
-    const comment = await makeComment(author.id, { eventId: event.id })
+    const comment = await makeComment(author.id, event.id)
 
     const res = await app.inject({
       method: 'POST',
@@ -128,7 +128,7 @@ describe('POST /comments/:commentId/report', () => {
   it('retorna 401 sem autenticação', async () => {
     const author = await makeUser()
     const event = await makeEvent(author.id)
-    const comment = await makeComment(author.id, { eventId: event.id })
+    const comment = await makeComment(author.id, event.id)
 
     const res = await app.inject({
       method: 'POST',
@@ -155,7 +155,7 @@ describe('POST /comments/:commentId/report', () => {
   it('retorna 400 quando autor denuncia o próprio comentário', async () => {
     const author = await makeUser()
     const event = await makeEvent(author.id)
-    const comment = await makeComment(author.id, { eventId: event.id })
+    const comment = await makeComment(author.id, event.id)
 
     const res = await app.inject({
       method: 'POST',
@@ -171,7 +171,7 @@ describe('POST /comments/:commentId/report', () => {
     const author = await makeUser()
     const reporter = await makeUser()
     const event = await makeEvent(author.id)
-    const comment = await makeComment(author.id, { eventId: event.id })
+    const comment = await makeComment(author.id, event.id)
     await makeReport(reporter.id, { commentId: comment.id })
 
     const res = await app.inject({

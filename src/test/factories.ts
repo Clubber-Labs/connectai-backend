@@ -90,6 +90,9 @@ export async function makeReport(
       eventId: overrides.eventId,
       commentId: overrides.commentId,
     },
+  })
+}
+
 export async function makeReaction(
   userId: string,
   eventId: string,
