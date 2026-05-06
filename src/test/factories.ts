@@ -73,6 +73,26 @@ export async function makeInvite(
   })
 }
 
+export async function makeReport(
+  reporterId: string,
+  overrides: {
+    eventId?: string
+    commentId?: string
+    reason?: 'HATE_SPEECH' | 'SPAM_OR_FRAUD' | 'HARASSMENT' | 'INAPPROPRIATE_CONTENT' | 'OTHER'
+    status?: 'PENDING' | 'REVIEWED' | 'RESOLVED_INVALID' | 'RESOLVED_REMOVED'
+  } = {},
+) {
+  return testPrisma.report.create({
+    data: {
+      reporterId,
+      reason: overrides.reason ?? 'SPAM_OR_FRAUD',
+      status: overrides.status ?? 'PENDING',
+      eventId: overrides.eventId,
+      commentId: overrides.commentId,
+    },
+  })
+}
+
 export async function makeReaction(
   userId: string,
   eventId: string,
