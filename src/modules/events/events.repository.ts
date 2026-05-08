@@ -65,6 +65,8 @@ type PrismaEvent = Prisma.EventGetPayload<{
   }
 }>
 
+type AuthorPayload = Prisma.UserGetPayload<{ select: typeof authorSelect }>
+
 export type NormalizedEvent = Omit<
   PrismaEvent,
   'reactions' | 'attendances' | 'comments'
@@ -73,7 +75,7 @@ export type NormalizedEvent = Omit<
     id: string
     content: string
     createdAt: Date
-    author: { id: string; name: string; lastname: string; username: string }
+    author: AuthorPayload
   }[]
   userReaction: string | null
   userAttendance: string | null

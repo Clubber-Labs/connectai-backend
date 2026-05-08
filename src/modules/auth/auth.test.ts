@@ -53,3 +53,9 @@ describe('POST /auth/login', () => {
   })
 })
 
+describe('GET /auth/me (removido)', () => {
+  it('retorna 404 — rota substituída por GET /users/me', async () => {
+    const res = await app.inject({ method: 'GET', url: '/auth/me' })
+    expect(res.statusCode).toBe(404)
+  })
+})

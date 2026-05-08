@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma'
 
 const authorSelect = {
@@ -8,7 +9,7 @@ const authorSelect = {
   avatarUrl: true,
 } as const
 
-type FeedUser = { id: string; name: string; lastname: string; username: string }
+type FeedUser = Prisma.UserGetPayload<{ select: typeof authorSelect }>
 
 export type FeedReason =
   | { kind: 'self_created' }

@@ -27,11 +27,9 @@ export async function getUserById(id: string, viewerId?: string) {
 
   const { _count, ...rest } = user
 
-  let followStatus: string | null = null
-  if (viewerId && viewerId !== id) {
-    const follow = await findFollow(viewerId, id)
-    followStatus = follow?.status ?? null
-  }
+  const follow =
+    viewerId && viewerId !== id ? await findFollow(viewerId, id) : null
+  const followStatus = follow?.status ?? null
 
   return { ...rest, eventsCount: _count.events, followStatus }
 }
