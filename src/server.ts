@@ -114,12 +114,21 @@ app.addHook('onClose', async () => {
   if (redis) await redis.quit()
 })
 
-for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-  process.on(signal, async () => {
+let shuttingDown = false
+async function shutdown(signal: NodeJS.Signals) {
+  if (shuttingDown) return
+  shuttingDown = true
+  try {
     await app.close()
     process.exit(0)
-  })
+  } catch (err) {
+    app.log.error({ err, signal }, 'erro durante shutdown')
+    process.exit(1)
+  }
 }
+
+process.once('SIGINT', shutdown)
+process.once('SIGTERM', shutdown)
 
 app.listen({ port: env.PORT, host: '0.0.0.0' }).then(() => {
   console.log(`🔥 Server is running on http://localhost:${env.PORT}`)

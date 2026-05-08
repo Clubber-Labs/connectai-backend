@@ -1,16 +1,21 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { cache } from './cache'
-import { redis } from './redis'
+import { redis as nullableRedis } from './redis'
+
+if (!nullableRedis) {
+  throw new Error(
+    'REDIS_URL deve estar configurada em .env.test para esses testes',
+  )
+}
+
+const redis = nullableRedis
 
 beforeAll(async () => {
-  if (!redis) {
-    throw new Error('REDIS_URL deve estar configurada em .env.test')
-  }
   await redis.flushdb()
 })
 
 afterAll(async () => {
-  if (redis) await redis.flushdb()
+  await redis.flushdb()
 })
 
 describe('cache.key', () => {
@@ -42,7 +47,7 @@ describe('cache.set / cache.get', () => {
 
   it('retorna null quando o valor armazenado não é JSON válido', async () => {
     const key = cache.key('corrupt')
-    await redis!.set(key, 'not-json{{{')
+    await redis.set(key, 'not-json{{{')
 
     const value = await cache.get(key)
     expect(value).toBeNull()
@@ -52,7 +57,7 @@ describe('cache.set / cache.get', () => {
     const key = cache.key('ttl-test')
     await cache.set(key, 'value', 10)
 
-    const ttl = await redis!.ttl(key)
+    const ttl = await redis.ttl(key)
     expect(ttl).toBeGreaterThan(0)
     expect(ttl).toBeLessThanOrEqual(10)
   })
@@ -76,8 +81,8 @@ describe('cache.invalidate', () => {
 
     await cache.invalidate('inv:*')
 
-    const remaining = await redis!.keys('v1:inv:*')
-    const other = await redis!.keys('v1:outro:*')
+    const remaining = await redis.keys('v1:inv:*')
+    const other = await redis.keys('v1:outro:*')
     expect(remaining).toHaveLength(0)
     expect(other).toHaveLength(1)
   })
@@ -89,7 +94,7 @@ describe('cache.invalidate', () => {
 
     await cache.invalidate('race:*')
 
-    const remaining = await redis!.keys('v1:race:*')
+    const remaining = await redis.keys('v1:race:*')
     expect(remaining).toHaveLength(0)
   })
 

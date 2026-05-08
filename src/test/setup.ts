@@ -18,7 +18,13 @@ if (!dbUrl.includes('test')) {
 
 const redisUrl = process.env.REDIS_URL ?? ''
 
-if (redisUrl && !redisUrl.endsWith('/15')) {
+if (!redisUrl) {
+  throw new Error(
+    'PERIGO: REDIS_URL não está definido. Os testes dependem de Redis ativo no database /15.',
+  )
+}
+
+if (!redisUrl.endsWith('/15')) {
   throw new Error(
     `PERIGO: REDIS_URL não aponta para o database de teste (/15).\nValor atual: "${redisUrl}"`,
   )

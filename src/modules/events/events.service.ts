@@ -110,7 +110,9 @@ export async function getEventById(id: string, requesterId?: string) {
 
 export async function addEvent(data: CreateEventBody, authorId: string) {
   const event = await createEvent({ ...data, authorId })
-  await cache.invalidate('events:public:*')
+  if (data.isPublic === true) {
+    await cache.invalidate('events:public:*')
+  }
   return event
 }
 
@@ -128,7 +130,9 @@ export async function editEvent(
     }
 
   const updated = await updateEvent(id, data)
-  await cache.invalidate('events:public:*')
+  if (event.isPublic || data.isPublic === true) {
+    await cache.invalidate('events:public:*')
+  }
   return updated
 }
 
@@ -148,7 +152,9 @@ export async function removeEvent(
   const images = (await findEventImageKeys(id)) as { key: string }[]
   await Promise.all(images.map((img) => deleteUploaded(img.key, logger)))
   await deleteEvent(id)
-  await cache.invalidate('events:public:*')
+  if (event.isPublic) {
+    await cache.invalidate('events:public:*')
+  }
 }
 
 export async function addEventImage(
@@ -174,7 +180,9 @@ export async function addEventImage(
       format: uploaded.format,
       size: uploaded.size,
     })
-    await cache.invalidate('events:public:*')
+    if (event.isPublic) {
+      await cache.invalidate('events:public:*')
+    }
     return image
   } catch (err) {
     await deleteUploaded(uploaded.key, logger)

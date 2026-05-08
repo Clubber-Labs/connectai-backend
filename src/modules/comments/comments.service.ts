@@ -15,9 +15,11 @@ export async function addCommentToEvent(
   eventId: string,
   body: CreateCommentBody,
 ) {
-  await ensureEventAccess(eventId, authorId)
+  const event = await ensureEventAccess(eventId, authorId)
   const comment = await createComment(authorId, body.content, { eventId })
-  await cache.invalidate('events:public:*')
+  if (event.isPublic) {
+    await cache.invalidate('events:public:*')
+  }
   return comment
 }
 
@@ -86,7 +88,7 @@ export async function removeComment(
   if (!eventId) {
     throw { statusCode: 404, message: 'Comentário sem evento associado' }
   }
-  await ensureEventAccess(eventId, requesterId)
+  const event = await ensureEventAccess(eventId, requesterId)
 
   if (comment.authorId !== requesterId) {
     throw {
@@ -96,7 +98,7 @@ export async function removeComment(
   }
 
   const result = await deleteComment(commentId)
-  if (comment.eventId) {
+  if (comment.eventId && event.isPublic) {
     await cache.invalidate('events:public:*')
   }
   return result

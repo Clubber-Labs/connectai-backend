@@ -1,11 +1,19 @@
 import type { FastifyInstance } from 'fastify'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { redis } from '../../lib/redis'
+import { redis as nullableRedis } from '../../lib/redis'
 import { buildApp } from '../../test/app'
 import { makeEvent, makeInvite, makeUser } from '../../test/factories'
 import { fakeStorage } from '../../test/fake-storage'
 import { multipartFormData, tinyPngBuffer } from '../../test/image-fixture'
 import { testPrisma } from '../../test/prisma'
+
+if (!nullableRedis) {
+  throw new Error(
+    'REDIS_URL deve estar configurada em .env.test para esses testes',
+  )
+}
+
+const redis = nullableRedis
 
 let app: FastifyInstance
 
@@ -73,7 +81,7 @@ describe('cache de GET /events', () => {
 
     await app.inject({ method: 'GET', url: '/events' })
 
-    const beforeKeys = await redis!.keys('v1:events:public:*')
+    const beforeKeys = await redis.keys('v1:events:public:*')
     expect(beforeKeys.length).toBeGreaterThan(0)
 
     const reactRes = await app.inject({
@@ -84,7 +92,7 @@ describe('cache de GET /events', () => {
     })
     expect(reactRes.statusCode).toBe(201)
 
-    const afterKeys = await redis!.keys('v1:events:public:*')
+    const afterKeys = await redis.keys('v1:events:public:*')
     expect(afterKeys).toEqual(beforeKeys)
   })
 
@@ -95,7 +103,7 @@ describe('cache de GET /events', () => {
 
     await app.inject({ method: 'GET', url: '/events' })
 
-    const beforeKeys = await redis!.keys('v1:events:public:*')
+    const beforeKeys = await redis.keys('v1:events:public:*')
     expect(beforeKeys.length).toBeGreaterThan(0)
 
     const attRes = await app.inject({
@@ -106,7 +114,7 @@ describe('cache de GET /events', () => {
     })
     expect(attRes.statusCode).toBe(201)
 
-    const afterKeys = await redis!.keys('v1:events:public:*')
+    const afterKeys = await redis.keys('v1:events:public:*')
     expect(afterKeys).toEqual(beforeKeys)
   })
 
@@ -142,7 +150,7 @@ describe('cache de GET /events', () => {
       .data.find((e: { id: string }) => e.id === event.id)
     expect(eventB.userReaction).toBeNull()
 
-    const keys = await redis!.keys('v1:events:public:*')
+    const keys = await redis.keys('v1:events:public:*')
     expect(keys).toHaveLength(1)
   })
 
@@ -151,7 +159,7 @@ describe('cache de GET /events', () => {
     await makeEvent(author.id, { isPublic: true })
 
     await app.inject({ method: 'GET', url: '/events' })
-    expect((await redis!.keys('v1:events:public:*')).length).toBeGreaterThan(0)
+    expect((await redis.keys('v1:events:public:*')).length).toBeGreaterThan(0)
 
     await app.inject({
       method: 'POST',
@@ -168,7 +176,7 @@ describe('cache de GET /events', () => {
       },
     })
 
-    expect(await redis!.keys('v1:events:public:*')).toHaveLength(0)
+    expect(await redis.keys('v1:events:public:*')).toHaveLength(0)
   })
 })
 
