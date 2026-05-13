@@ -6,6 +6,10 @@ import { testPrisma } from '../../test/prisma'
 
 let app: FastifyInstance
 
+function token(userId: string, role: 'USER' | 'ADMIN') {
+  return app.jwt.sign({ sub: userId, role })
+}
+
 beforeAll(async () => {
   app = buildApp()
   await app.ready()
@@ -56,12 +60,11 @@ describe('POST /auth/login', () => {
 describe('GET /auth/me', () => {
   it('retorna dados do usuário autenticado', async () => {
     const user = await makeUser()
-    const token = app.jwt.sign({ sub: user.id })
 
     const res = await app.inject({
       method: 'GET',
       url: '/auth/me',
-      headers: { authorization: `Bearer ${token}` },
+      headers: { authorization: `Bearer ${token(user.id, user.role)}` },
     })
 
     expect(res.statusCode).toBe(200)

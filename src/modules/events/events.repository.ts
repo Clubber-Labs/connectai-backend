@@ -107,6 +107,7 @@ export async function findPublicEvents(
   const events = (await prisma.event.findMany({
     where: {
       isPublic: true,
+      author: { isBanned: false },
       ...(filters.category && filters.category.length > 0
         ? { category: { in: filters.category } }
         : {}),
@@ -145,7 +146,7 @@ export async function findEventsByAuthor(
 ) {
   const where: Prisma.EventWhereInput = {
     authorId,
-    ...(viewerId !== authorId && { isPublic: true }),
+    ...(viewerId !== authorId && { isPublic: true, author: { isBanned: false } }),
   }
   const events = (await prisma.event.findMany({
     where,

@@ -5,10 +5,10 @@ export async function findUserById(id: string) {
     return prisma.user.findUnique({ where: { id } })
 }
 
-export async function banUser(id: string, bannedAt: Date) {
+export async function banUser(id: string, bannedAt: Date, reason?: string) {
     return prisma.user.update({
         where: { id },
-        data: { isBanned: true, bannedAt },
+        data: { isBanned: true, bannedAt, banReason: reason ?? null},
     })
 }
 

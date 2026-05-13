@@ -6,15 +6,15 @@ import { testPrisma } from '../../test/prisma'
 
 let app: FastifyInstance
 
-function token(app: FastifyInstance, userId: string) {
-  return app.jwt.sign({ sub: userId })
+function token(userId: string, role: 'USER' | 'ADMIN' = 'USER') {
+  return app.jwt.sign({ sub: userId, role })
 }
 
 async function makePost(app: FastifyInstance, userId: string, eventId: string) {
   const res = await app.inject({
     method: 'POST',
     url: `/events/${eventId}/posts`,
-    headers: { authorization: `Bearer ${token(app, userId)}` },
+    headers: { authorization: `Bearer ${token(userId)}` },
     body: { content: 'Post base' },
   })
   return res.json()
@@ -38,7 +38,7 @@ describe('POST /events/:eventId/reactions', () => {
     const res = await app.inject({
       method: 'POST',
       url: `/events/${event.id}/reactions`,
-      headers: { authorization: `Bearer ${token(app, user.id)}` },
+      headers: { authorization: `Bearer ${token(user.id)}` },
       body: { type: 'LIKE' },
     })
 
@@ -53,14 +53,14 @@ describe('POST /events/:eventId/reactions', () => {
     await app.inject({
       method: 'POST',
       url: `/events/${event.id}/reactions`,
-      headers: { authorization: `Bearer ${token(app, user.id)}` },
+      headers: { authorization: `Bearer ${token(user.id)}` },
       body: { type: 'LIKE' },
     })
 
     const res = await app.inject({
       method: 'POST',
       url: `/events/${event.id}/reactions`,
-      headers: { authorization: `Bearer ${token(app, user.id)}` },
+      headers: { authorization: `Bearer ${token(user.id)}` },
       body: { type: 'LOVE' },
     })
 
@@ -81,7 +81,7 @@ describe('POST /events/:eventId/reactions', () => {
     const res = await app.inject({
       method: 'POST',
       url: `/events/${event.id}/reactions`,
-      headers: { authorization: `Bearer ${token(app, other.id)}` },
+      headers: { authorization: `Bearer ${token(other.id)}` },
       body: { type: 'LIKE' },
     })
 
@@ -97,14 +97,14 @@ describe('DELETE /events/:eventId/reactions', () => {
     await app.inject({
       method: 'POST',
       url: `/events/${event.id}/reactions`,
-      headers: { authorization: `Bearer ${token(app, user.id)}` },
+      headers: { authorization: `Bearer ${token(user.id)}` },
       body: { type: 'LIKE' },
     })
 
     const res = await app.inject({
       method: 'DELETE',
       url: `/events/${event.id}/reactions`,
-      headers: { authorization: `Bearer ${token(app, user.id)}` },
+      headers: { authorization: `Bearer ${token(user.id)}` },
     })
 
     expect(res.statusCode).toBe(204)
@@ -117,7 +117,7 @@ describe('DELETE /events/:eventId/reactions', () => {
     const res = await app.inject({
       method: 'DELETE',
       url: `/events/${event.id}/reactions`,
-      headers: { authorization: `Bearer ${token(app, user.id)}` },
+      headers: { authorization: `Bearer ${token(user.id)}` },
     })
 
     expect(res.statusCode).toBe(404)
@@ -134,7 +134,7 @@ describe('POST /posts/:postId/reactions', () => {
     const res = await app.inject({
       method: 'POST',
       url: `/posts/${post.id}/reactions`,
-      headers: { authorization: `Bearer ${token(app, user.id)}` },
+      headers: { authorization: `Bearer ${token(user.id)}` },
       body: { type: 'HAHA' },
     })
 
@@ -153,14 +153,14 @@ describe('DELETE /posts/:postId/reactions', () => {
     await app.inject({
       method: 'POST',
       url: `/posts/${post.id}/reactions`,
-      headers: { authorization: `Bearer ${token(app, user.id)}` },
+      headers: { authorization: `Bearer ${token(user.id)}` },
       body: { type: 'LIKE' },
     })
 
     const res = await app.inject({
       method: 'DELETE',
       url: `/posts/${post.id}/reactions`,
-      headers: { authorization: `Bearer ${token(app, user.id)}` },
+      headers: { authorization: `Bearer ${token(user.id)}` },
     })
 
     expect(res.statusCode).toBe(204)

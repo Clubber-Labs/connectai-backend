@@ -8,8 +8,8 @@ import { testPrisma } from '../../test/prisma'
 
 let app: FastifyInstance
 
-function token(app: FastifyInstance, userId: string) {
-  return app.jwt.sign({ sub: userId })
+function token(userId: string, role: 'USER' | 'ADMIN') {
+  return app.jwt.sign({ sub: userId, role })
 }
 
 beforeAll(async () => {
@@ -32,7 +32,7 @@ describe('PATCH /users/me/avatar', () => {
       method: 'PATCH',
       url: '/users/me/avatar',
       headers: {
-        authorization: `Bearer ${token(app, user.id)}`,
+        authorization: `Bearer ${token(user.id, user.role)}`,
         'content-type': contentType,
       },
       payload: body,
@@ -53,7 +53,7 @@ describe('PATCH /users/me/avatar', () => {
       method: 'PATCH',
       url: '/users/me/avatar',
       headers: {
-        authorization: `Bearer ${token(app, user.id)}`,
+        authorization: `Bearer ${token(user.id, user.role)}`,
         'content-type': first.contentType,
       },
       payload: first.body,
@@ -65,7 +65,7 @@ describe('PATCH /users/me/avatar', () => {
       method: 'PATCH',
       url: '/users/me/avatar',
       headers: {
-        authorization: `Bearer ${token(app, user.id)}`,
+        authorization: `Bearer ${token(user.id, user.role)}`,
         'content-type': second.contentType,
       },
       payload: second.body,
@@ -88,7 +88,7 @@ describe('PATCH /users/me/avatar', () => {
       method: 'PATCH',
       url: '/users/me/avatar',
       headers: {
-        authorization: `Bearer ${token(app, user.id)}`,
+        authorization: `Bearer ${token(user.id, user.role)}`,
         'content-type': contentType,
       },
       payload: body,

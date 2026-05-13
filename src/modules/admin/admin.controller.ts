@@ -10,7 +10,7 @@ import {
 } from "./admin.service";
 
 export async function patchBanUser(request: FastifyRequest<{Params: {id: string}, Body: AdminBanBody}>, reply: FastifyReply) {
-    await banUserById(request.params.id, request.user.sub)
+    await banUserById(request.params.id, request.user.sub, request.body)
     return reply.status(204).send()
 }
 

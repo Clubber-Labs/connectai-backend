@@ -8,8 +8,8 @@ import { testPrisma } from '../../test/prisma'
 
 let app: FastifyInstance
 
-function token(app: FastifyInstance, userId: string) {
-  return app.jwt.sign({ sub: userId })
+function token(userId: string, role: 'USER' | 'ADMIN') {
+  return app.jwt.sign({ sub: userId, role })
 }
 
 beforeAll(async () => {
@@ -79,7 +79,7 @@ describe('GET /events', () => {
     const res = await app.inject({
       method: 'GET',
       url: '/events',
-      headers: { authorization: `Bearer ${token(app, viewer.id)}` },
+      headers: { authorization: `Bearer ${token(viewer.id, viewer.role)}` },
     })
 
     expect(res.statusCode).toBe(200)
@@ -120,7 +120,7 @@ describe('GET /events/:id', () => {
     const res = await app.inject({
       method: 'GET',
       url: `/events/${event.id}`,
-      headers: { authorization: `Bearer ${token(app, user.id)}` },
+      headers: { authorization: `Bearer ${token(user.id, user.role)}` },
     })
 
     expect(res.statusCode).toBe(200)
@@ -135,7 +135,7 @@ describe('GET /events/:id', () => {
     const res = await app.inject({
       method: 'GET',
       url: `/events/${event.id}`,
-      headers: { authorization: `Bearer ${token(app, guest.id)}` },
+      headers: { authorization: `Bearer ${token(guest.id, guest.role)}` },
     })
 
     expect(res.statusCode).toBe(200)
@@ -149,7 +149,7 @@ describe('GET /events/:id', () => {
     const res = await app.inject({
       method: 'GET',
       url: `/events/${event.id}`,
-      headers: { authorization: `Bearer ${token(app, other.id)}` },
+      headers: { authorization: `Bearer ${token(other.id, other.role)}` },
     })
 
     expect(res.statusCode).toBe(403)
@@ -161,7 +161,7 @@ describe('GET /events/:id', () => {
     const res = await app.inject({
       method: 'GET',
       url: '/events/00000000-0000-0000-0000-000000000000',
-      headers: { authorization: `Bearer ${token(app, user.id)}` },
+      headers: { authorization: `Bearer ${token(user.id, user.role)}` },
     })
 
     expect(res.statusCode).toBe(404)
@@ -175,7 +175,7 @@ describe('POST /events', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/events',
-      headers: { authorization: `Bearer ${token(app, user.id)}` },
+      headers: { authorization: `Bearer ${token(user.id, user.role)}` },
       body: {
         title: 'Festa de verão',
         description: 'Uma festa incrível',
@@ -221,7 +221,7 @@ describe('DELETE /events/:id', () => {
     const res = await app.inject({
       method: 'DELETE',
       url: `/events/${event.id}`,
-      headers: { authorization: `Bearer ${token(app, user.id)}` },
+      headers: { authorization: `Bearer ${token(user.id, user.role)}` },
     })
 
     expect(res.statusCode).toBe(204)
@@ -235,7 +235,7 @@ describe('DELETE /events/:id', () => {
     const res = await app.inject({
       method: 'DELETE',
       url: `/events/${event.id}`,
-      headers: { authorization: `Bearer ${token(app, other.id)}` },
+      headers: { authorization: `Bearer ${token(other.id, other.role)}` },
     })
 
     expect(res.statusCode).toBe(403)
@@ -253,7 +253,7 @@ describe('POST /events/:id/images', () => {
       method: 'POST',
       url: `/events/${event.id}/images`,
       headers: {
-        authorization: `Bearer ${token(app, author.id)}`,
+        authorization: `Bearer ${token(author.id, author.role)}`,
         'content-type': contentType,
       },
       payload: body,
@@ -278,7 +278,7 @@ describe('POST /events/:id/images', () => {
       method: 'POST',
       url: `/events/${event.id}/images`,
       headers: {
-        authorization: `Bearer ${token(app, author.id)}`,
+        authorization: `Bearer ${token(author.id, author.role)}`,
         'content-type': 'multipart/form-data; boundary=----X',
       },
       payload: '------X--\r\n',
@@ -301,7 +301,7 @@ describe('POST /events/:id/images', () => {
       method: 'POST',
       url: `/events/${event.id}/images`,
       headers: {
-        authorization: `Bearer ${token(app, author.id)}`,
+        authorization: `Bearer ${token(author.id, author.role)}`,
         'content-type': contentType,
       },
       payload: body,
@@ -337,7 +337,7 @@ describe('POST /events/:id/images', () => {
       method: 'POST',
       url: `/events/${event.id}/images`,
       headers: {
-        authorization: `Bearer ${token(app, other.id)}`,
+        authorization: `Bearer ${token(other.id, other.role)}`,
         'content-type': contentType,
       },
       payload: body,

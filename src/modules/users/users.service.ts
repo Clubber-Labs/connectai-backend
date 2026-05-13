@@ -20,10 +20,13 @@ export async function listUsers(limit: number, cursor?: string) {
   return { data: users, nextCursor }
 }
 
-export async function getUserById(id: string) {
+export async function getUserById(id: string, requesterId?: string) {
   const user = await findUserById(id)
   if (!user) {
     throw { statusCode: 404, message: 'Usuário não encontrado' }
+  }
+  if(user.isBanned && requesterId !== id) {
+    throw { statusCode: 403, message: 'Usuário banido' }
   }
   return user
 }

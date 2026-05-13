@@ -1,9 +1,9 @@
 import { prisma } from "../../lib/prisma";
 import type { ReportStatus } from "@prisma/client";
-import type { AdminListReportsQuery, AdminResolveReportBody } from "./admin.schema";
+import type { AdminBanBody, AdminListReportsQuery, AdminResolveReportBody } from "./admin.schema";
 import { banUser, deleteEvent, findEventById, findReportById, findReports, findUserById, resolveReport, unbanUser } from "./admin.repository";
 
-export async function banUserById(targetId: string, adminId: string) {
+export async function banUserById(targetId: string, adminId: string, data: AdminBanBody = {})  {
     if(targetId === adminId) {
         throw {
             statusCode: 400,
@@ -29,7 +29,7 @@ export async function banUserById(targetId: string, adminId: string) {
             message: "Usuário já está banido",
         }
     }
-    return banUser(targetId, new Date())
+    return banUser(targetId, new Date(), data.reason)
 }
 
 export async function unbanUserById(targetId: string) {

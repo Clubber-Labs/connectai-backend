@@ -118,6 +118,7 @@ export async function makeComment(
 export async function makeAdmin(
   overrides?: Partial<{ username: string }>
 ) {
+  const id = uid()
   return testPrisma.user.create({
     data: {
       name: 'Admin',

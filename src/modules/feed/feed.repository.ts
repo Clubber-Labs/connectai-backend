@@ -83,6 +83,7 @@ export async function findFeedEvents(
   const events = await prisma.event.findMany({
     where: {
       AND: [
+        { author: { isBanned: false } },
         {
           OR: [
             { authorId: { in: [...followingIds, viewerId] } },

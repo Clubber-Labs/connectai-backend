@@ -13,6 +13,7 @@ const userPublicListSelect = {
   followersCount: true,
   followingCount: true,
   createdAt: true,
+  isBanned: false,
 } as const
 
 const userProfileSelect = {
@@ -21,6 +22,7 @@ const userProfileSelect = {
   phone: true,
   birthdate: true,
   role: true,
+  isBanned: true,
 } as const
 
 export async function findAllUsers(limit: number, cursor?: string) {
