@@ -3,6 +3,7 @@ import { buildLifecycleWhere } from '../../lib/event-filters'
 import { computeEventStatus } from '../../lib/event-lifecycle'
 import { prisma } from '../../lib/prisma'
 import { authorVisibleWhere } from '../../lib/profile-visibility'
+import { buildCommentInclude } from '../comments/comments.repository'
 import type { FeedQuery } from './feed.schema'
 
 const PREFERRED_CATEGORIES_LIMIT = 3
@@ -38,33 +39,6 @@ type FriendCommentRow = {
   content: string
   author: FeedUser
 }
-
-type FeedEventPayload = Prisma.EventGetPayload<{
-  include: {
-    author: { select: typeof authorSelect }
-    attendances: { include: { user: { select: typeof authorSelect } } }
-    reactions: { select: { id: true } }
-    comments: {
-      include: {
-        author: { select: typeof authorSelect }
-        _count: { select: { reactions: true } }
-        reactions: { select: { id: true } }
-      }
-    }
-    images: {
-      select: {
-        id: true
-        url: true
-        format: true
-        size: true
-        order: true
-      }
-    }
-    _count: {
-      select: { attendances: true; comments: true; reactions: true }
-    }
-  }
-}>
 
 function resolveReason(
   eventId: string,
@@ -139,7 +113,7 @@ export async function findFeedCandidates(
       ? { category: { in: query.category } }
       : null
 
-  const events = (await prisma.event.findMany({
+  const events = await prisma.event.findMany({
     where: {
       AND: [
         lifecycleWhere,
@@ -192,15 +166,7 @@ export async function findFeedCandidates(
       comments: {
         orderBy: { createdAt: 'desc' as const },
         take: 2,
-        include: {
-          author: { select: authorSelect },
-          _count: { select: { reactions: true } },
-          reactions: {
-            where: { userId: viewerId },
-            select: { id: true },
-            take: 1,
-          },
-        },
+        include: buildCommentInclude(viewerId),
       },
       images: {
         orderBy: [{ order: 'asc' as const }, { createdAt: 'asc' as const }],
@@ -220,7 +186,7 @@ export async function findFeedCandidates(
         },
       },
     },
-  })) as unknown as FeedEventPayload[]
+  })
 
   if (events.length === 0) return []
 

@@ -12,6 +12,10 @@ import {
   findEventIdsInBbox,
   findEventIdsWithinRadius,
 } from '../../lib/spatial'
+import {
+  buildCommentInclude,
+  commentAuthorSelect,
+} from '../comments/comments.repository'
 import type {
   CreateEventBody,
   ListEventsQuery,
@@ -19,13 +23,7 @@ import type {
   UpdateEventBody,
 } from './events.schema'
 
-const authorSelect = {
-  id: true,
-  name: true,
-  lastname: true,
-  username: true,
-  avatarUrl: true,
-} as const
+const authorSelect = commentAuthorSelect
 
 const eventImageSelect = {
   id: true,
@@ -34,20 +32,6 @@ const eventImageSelect = {
   size: true,
   order: true,
 } as const
-
-function buildCommentInclude(viewerId?: string) {
-  return {
-    author: { select: authorSelect },
-    _count: { select: { reactions: true } },
-    ...(viewerId && {
-      reactions: {
-        where: { userId: viewerId },
-        select: { id: true },
-        take: 1,
-      },
-    }),
-  } satisfies Prisma.CommentInclude
-}
 
 function buildEventIncludes(viewerId?: string): Prisma.EventInclude {
   return {
