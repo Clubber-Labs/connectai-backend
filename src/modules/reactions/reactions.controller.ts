@@ -1,14 +1,16 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import type {
+  CommentReactionParam,
   EventReactionParam,
   PostReactionParam,
-  ReactionBody,
 } from './reactions.schema'
 import {
-  reactToEvent,
-  reactToPost,
-  removeEventReaction,
-  removePostReaction,
+  likeComment,
+  likeEvent,
+  likePost,
+  unlikeComment,
+  unlikeEvent,
+  unlikePost,
 } from './reactions.service'
 
 export async function postEventReaction(
@@ -16,8 +18,7 @@ export async function postEventReaction(
   reply: FastifyReply,
 ) {
   const { eventId } = request.params as EventReactionParam
-  const { type } = request.body as ReactionBody
-  const reaction = await reactToEvent(request.user.sub, eventId, type)
+  const reaction = await likeEvent(request.user.sub, eventId)
   return reply.status(201).send(reaction)
 }
 
@@ -26,7 +27,7 @@ export async function deleteEventReaction(
   reply: FastifyReply,
 ) {
   const { eventId } = request.params as EventReactionParam
-  await removeEventReaction(request.user.sub, eventId)
+  await unlikeEvent(request.user.sub, eventId)
   return reply.status(204).send()
 }
 
@@ -35,8 +36,7 @@ export async function postPostReaction(
   reply: FastifyReply,
 ) {
   const { postId } = request.params as PostReactionParam
-  const { type } = request.body as ReactionBody
-  const reaction = await reactToPost(request.user.sub, postId, type)
+  const reaction = await likePost(request.user.sub, postId)
   return reply.status(201).send(reaction)
 }
 
@@ -45,6 +45,24 @@ export async function deletePostReaction(
   reply: FastifyReply,
 ) {
   const { postId } = request.params as PostReactionParam
-  await removePostReaction(request.user.sub, postId)
+  await unlikePost(request.user.sub, postId)
+  return reply.status(204).send()
+}
+
+export async function postCommentReaction(
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const { commentId } = request.params as CommentReactionParam
+  const reaction = await likeComment(request.user.sub, commentId)
+  return reply.status(201).send(reaction)
+}
+
+export async function deleteCommentReaction(
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const { commentId } = request.params as CommentReactionParam
+  await unlikeComment(request.user.sub, commentId)
   return reply.status(204).send()
 }

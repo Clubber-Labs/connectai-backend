@@ -12,8 +12,8 @@ export const postReactionParamSchema = z.object({
 
 export type PostReactionParam = z.infer<typeof postReactionParamSchema>
 
-export const reactionBodySchema = z.object({
-  type: z.enum(['LIKE', 'LOVE', 'HAHA', 'WOW', 'SAD', 'ANGRY']),
+export const commentReactionParamSchema = z.object({
+  commentId: z.uuid('ID do comentário inválido'),
 })
 
-export type ReactionBody = z.infer<typeof reactionBodySchema>
+export type CommentReactionParam = z.infer<typeof commentReactionParamSchema>
