@@ -10,9 +10,20 @@ export async function checkEventAccess(
 ): Promise<void> {
   if (event.authorId === requesterId) return
 
-  const authorVisible = await canViewAuthorContent(event.authorId, requesterId)
-
-  if (event.isPublic && authorVisible) return
+  if (event.isPublic) {
+    const authorVisible = await canViewAuthorContent(
+      event.authorId,
+      requesterId,
+    )
+    if (authorVisible) return
+    if (!requesterId) {
+      throw {
+        statusCode: 401,
+        message: 'Autenticação necessária para acessar este evento',
+      }
+    }
+    throw { statusCode: 403, message: 'Você não tem acesso a este evento' }
+  }
 
   if (!requesterId) {
     throw {

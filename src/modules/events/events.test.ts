@@ -487,6 +487,46 @@ describe('GET /events/map', () => {
 
     expect(res.statusCode).toBe(400)
   })
+
+  it('NÃO retorna ponto de autor privado para viewer não-follower', async () => {
+    const privateAuthor = await makeUser({ isPrivate: true })
+    const stranger = await makeUser()
+    await makeEvent(privateAuthor.id, {
+      latitude: -25.4,
+      longitude: -49.3,
+      isPublic: true,
+    })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/events/map?bboxNorth=-25.3&bboxSouth=-25.5&bboxEast=-49.2&bboxWest=-49.4',
+      headers: { authorization: `Bearer ${token(app, stranger.id)}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual([])
+  })
+
+  it('retorna ponto de autor privado para follower aceito', async () => {
+    const privateAuthor = await makeUser({ isPrivate: true })
+    const follower = await makeUser()
+    await makeFollow(follower.id, privateAuthor.id, 'ACCEPTED')
+    const event = await makeEvent(privateAuthor.id, {
+      latitude: -25.4,
+      longitude: -49.3,
+      isPublic: true,
+    })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/events/map?bboxNorth=-25.3&bboxSouth=-25.5&bboxEast=-49.2&bboxWest=-49.4',
+      headers: { authorization: `Bearer ${token(app, follower.id)}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().length).toBe(1)
+    expect(res.json()[0].id).toBe(event.id)
+  })
 })
 
 describe('GET /events/:id', () => {
@@ -584,6 +624,38 @@ describe('GET /users/:id/events — privacy gate', () => {
     expect(res.json().data.length).toBe(1)
   })
 
+  it('convite NÃO bypassa privacidade do autor em evento público', async () => {
+    const privateAuthor = await makeUser({ isPrivate: true })
+    const invitee = await makeUser()
+    const event = await makeEvent(privateAuthor.id, { isPublic: true })
+    await makeInvite(event.id, privateAuthor.id, invitee.id)
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/events/${event.id}`,
+      headers: { authorization: `Bearer ${token(app, invitee.id)}` },
+    })
+
+    expect(res.statusCode).toBe(403)
+  })
+
+  it('convite continua dando acesso em evento privado (autor pessoal/profissional)', async () => {
+    const privateAuthor = await makeUser({ isPrivate: true })
+    const invitee = await makeUser()
+    const event = await makeEvent(privateAuthor.id, { isPublic: false })
+    await makeInvite(event.id, privateAuthor.id, invitee.id)
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/events/${event.id}`,
+      headers: { authorization: `Bearer ${token(app, invitee.id)}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+  })
+})
+
+describe('GET /events/:id — acesso por convite e visibilidade', () => {
   it('retorna evento privado para o autor', async () => {
     const user = await makeUser()
     const event = await makeEvent(user.id, { isPublic: false })
