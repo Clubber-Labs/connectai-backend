@@ -5,6 +5,7 @@ import {
   type EventStatus,
 } from '../../lib/event-lifecycle'
 import { prisma } from '../../lib/prisma'
+import { authorVisibleWhere } from '../../lib/profile-visibility'
 import {
   type Bbox,
   findEventIdsByDistance,
@@ -180,24 +181,29 @@ export async function findPublicEvents(
 
   const events = (await prisma.event.findMany({
     where: {
-      isPublic: true,
-      ...buildLifecycleWhere({
-        includePast: filters.includePast ?? false,
-        status: filters.status,
-        now,
-      }),
-      ...(spatialIdFilter && { id: { in: spatialIdFilter } }),
-      ...(filters.category && filters.category.length > 0
-        ? { category: { in: filters.category } }
-        : {}),
-      ...(filters.dateFrom || filters.dateTo
-        ? {
-            date: {
-              ...(filters.dateFrom && { gte: new Date(filters.dateFrom) }),
-              ...(filters.dateTo && { lte: new Date(filters.dateTo) }),
-            },
-          }
-        : {}),
+      AND: [
+        { isPublic: true },
+        authorVisibleWhere(viewerId),
+        buildLifecycleWhere({
+          includePast: filters.includePast ?? false,
+          status: filters.status,
+          now,
+        }),
+        ...(spatialIdFilter ? [{ id: { in: spatialIdFilter } }] : []),
+        ...(filters.category && filters.category.length > 0
+          ? [{ category: { in: filters.category } }]
+          : []),
+        ...(filters.dateFrom || filters.dateTo
+          ? [
+              {
+                date: {
+                  ...(filters.dateFrom && { gte: new Date(filters.dateFrom) }),
+                  ...(filters.dateTo && { lte: new Date(filters.dateTo) }),
+                },
+              },
+            ]
+          : []),
+      ],
     },
     take: filters.orderBy === 'distance' ? undefined : limit,
     ...(cursor && filters.orderBy !== 'distance' && { skip: 1, cursor: { id: cursor } }),
@@ -224,8 +230,11 @@ export async function findEventsByAuthor(
   now: Date = new Date(),
 ) {
   const where: Prisma.EventWhereInput = {
-    authorId,
-    ...(viewerId !== authorId && { isPublic: true }),
+    AND: [
+      { authorId },
+      authorVisibleWhere(viewerId),
+      ...(viewerId !== authorId ? [{ isPublic: true }] : []),
+    ],
   }
   const events = (await prisma.event.findMany({
     where,
@@ -295,6 +304,7 @@ const MAP_RESPONSE_CAP = 500
  */
 export async function findEventsForMap(
   query: MapEventsQuery,
+  viewerId?: string,
   now: Date = new Date(),
 ): Promise<MapEventPoint[]> {
   const bbox: Bbox = {
@@ -309,24 +319,29 @@ export async function findEventsForMap(
 
   const events = await prisma.event.findMany({
     where: {
-      id: { in: idsInBbox },
-      isPublic: true,
-      ...buildLifecycleWhere({
-        includePast: false,
-        status: query.status,
-        now,
-      }),
-      ...(query.category && query.category.length > 0
-        ? { category: { in: query.category } }
-        : {}),
-      ...(query.dateFrom || query.dateTo
-        ? {
-            date: {
-              ...(query.dateFrom && { gte: new Date(query.dateFrom) }),
-              ...(query.dateTo && { lte: new Date(query.dateTo) }),
-            },
-          }
-        : {}),
+      AND: [
+        { id: { in: idsInBbox } },
+        { isPublic: true },
+        authorVisibleWhere(viewerId),
+        buildLifecycleWhere({
+          includePast: false,
+          status: query.status,
+          now,
+        }),
+        ...(query.category && query.category.length > 0
+          ? [{ category: { in: query.category } }]
+          : []),
+        ...(query.dateFrom || query.dateTo
+          ? [
+              {
+                date: {
+                  ...(query.dateFrom && { gte: new Date(query.dateFrom) }),
+                  ...(query.dateTo && { lte: new Date(query.dateTo) }),
+                },
+              },
+            ]
+          : []),
+      ],
     },
     select: {
       id: true,

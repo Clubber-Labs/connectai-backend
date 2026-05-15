@@ -164,6 +164,40 @@ describe('GET /feed', () => {
     const res = await app.inject({ method: 'GET', url: '/feed' })
     expect(res.statusCode).toBe(401)
   })
+
+  it('NÃO mostra evento de autor privado quando amigo só interagiu', async () => {
+    const viewer = await makeUser()
+    const friend = await makeUser()
+    const privateAuthor = await makeUser({ isPrivate: true })
+    await makeFollow(viewer.id, friend.id, 'ACCEPTED')
+    const event = await makeEvent(privateAuthor.id, { isPublic: true })
+    await makeAttendance(friend.id, event.id, 'CONFIRMED')
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/feed',
+      headers: { authorization: `Bearer ${token(app, viewer.id)}` },
+    })
+
+    const found = res.json().data.find((e: { id: string }) => e.id === event.id)
+    expect(found).toBeUndefined()
+  })
+
+  it('mostra evento de autor privado quando viewer também segue o autor', async () => {
+    const viewer = await makeUser()
+    const privateAuthor = await makeUser({ isPrivate: true })
+    await makeFollow(viewer.id, privateAuthor.id, 'ACCEPTED')
+    const event = await makeEvent(privateAuthor.id, { isPublic: true })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/feed',
+      headers: { authorization: `Bearer ${token(app, viewer.id)}` },
+    })
+
+    const found = res.json().data.find((e: { id: string }) => e.id === event.id)
+    expect(found).toBeDefined()
+  })
 })
 
 describe('GET /feed — status', () => {

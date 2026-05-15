@@ -1,3 +1,4 @@
+import { canViewAuthorContent } from '../../lib/profile-visibility'
 import { findEventAccess } from '../events/events.repository'
 import { findInvite } from './event-invites.repository'
 
@@ -7,7 +8,11 @@ export async function checkEventAccess(
   event: EventAccessInfo,
   requesterId?: string,
 ): Promise<void> {
-  if (event.isPublic) return
+  if (event.authorId === requesterId) return
+
+  const authorVisible = await canViewAuthorContent(event.authorId, requesterId)
+
+  if (event.isPublic && authorVisible) return
 
   if (!requesterId) {
     throw {
@@ -15,8 +20,6 @@ export async function checkEventAccess(
       message: 'Autenticação necessária para acessar este evento',
     }
   }
-
-  if (event.authorId === requesterId) return
 
   const invite = await findInvite(event.id, requesterId)
   if (!invite) {

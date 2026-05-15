@@ -30,8 +30,11 @@ export async function listEvents(query: ListEventsQuery, viewerId?: string) {
   return { data: events, nextCursor }
 }
 
-export async function listEventsForMap(query: MapEventsQuery) {
-  return findEventsForMap(query)
+export async function listEventsForMap(
+  query: MapEventsQuery,
+  viewerId?: string,
+) {
+  return findEventsForMap(query, viewerId)
 }
 
 export async function listUserEvents(
