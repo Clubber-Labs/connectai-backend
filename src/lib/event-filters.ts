@@ -22,8 +22,8 @@ export function statusConditionFor(
           notCanceled,
           {
             OR: [
-              { endDate: { lt: now } },
-              { AND: [{ endDate: null }, { date: { lt: pastBoundary } }] },
+              { endDate: { lte: now } },
+              { AND: [{ endDate: null }, { date: { lte: pastBoundary } }] },
             ],
           },
         ],
@@ -35,8 +35,8 @@ export function statusConditionFor(
           { date: { lte: now } },
           {
             OR: [
-              { endDate: { gte: now } },
-              { AND: [{ endDate: null }, { date: { gte: pastBoundary } }] },
+              { endDate: { gt: now } },
+              { AND: [{ endDate: null }, { date: { gt: pastBoundary } }] },
             ],
           },
         ],

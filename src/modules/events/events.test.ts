@@ -187,6 +187,25 @@ describe('GET /events', () => {
     expect(res.json().data.length).toBe(1)
   })
 
+  it('?status=CANCELED combinado com radiusKm retorna cancelados próximos', async () => {
+    const user = await makeUser()
+    await makeEvent(user.id, {
+      latitude: -25.4,
+      longitude: -49.3,
+      isPublic: true,
+      canceledAt: new Date(),
+    })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/events?nearLat=-25.4&nearLng=-49.3&radiusKm=50&status=CANCELED',
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().data.length).toBe(1)
+    expect(res.json().data[0].canceledAt).not.toBeNull()
+  })
+
   it('orderBy=distance ordena pela proximidade', async () => {
     const user = await makeUser()
     const farId = (
@@ -547,6 +566,41 @@ describe('POST /events', () => {
         category: 'Festa',
         isPublic: true,
       },
+    })
+
+    expect(res.statusCode).toBe(400)
+  })
+})
+
+describe('PUT /events/:id', () => {
+  it('retorna 400 ao atualizar só endDate para antes da date persistida', async () => {
+    const user = await makeUser()
+    const start = new Date(Date.now() + 86400000)
+    const end = new Date(start.getTime() + 4 * 60 * 60 * 1000)
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/events',
+      headers: { authorization: `Bearer ${token(app, user.id)}` },
+      body: {
+        title: 'Evento original',
+        description: 'Descrição completa',
+        date: start.toISOString(),
+        endDate: end.toISOString(),
+        latitude: -25.4,
+        longitude: -49.3,
+        category: 'Festa',
+        isPublic: true,
+      },
+    })
+    const eventId = created.json().id
+    const badEnd = new Date(start.getTime() - 60 * 60 * 1000)
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/events/${eventId}`,
+      headers: { authorization: `Bearer ${token(app, user.id)}` },
+      body: { endDate: badEnd.toISOString() },
     })
 
     expect(res.statusCode).toBe(400)

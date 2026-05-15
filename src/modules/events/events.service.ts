@@ -72,6 +72,14 @@ export async function editEvent(
       statusCode: 403,
       message: 'Você não tem permissão para realizar esta ação',
     }
+
+  const effectiveDate = data.date ?? event.date
+  const effectiveEndDate =
+    data.endDate === undefined ? event.endDate : data.endDate
+  if (effectiveEndDate && effectiveEndDate <= effectiveDate) {
+    throw { statusCode: 400, message: 'endDate deve ser depois de date' }
+  }
+
   return updateEvent(id, data)
 }
 

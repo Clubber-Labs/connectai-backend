@@ -40,9 +40,14 @@ export async function getFeed(userId: string, query: FeedQuery) {
     }))
     .sort((a, b) => b.score - a.score)
 
-  const startIndex = query.cursor
-    ? scored.findIndex((s) => s.event.id === query.cursor) + 1
-    : 0
+  let startIndex = 0
+  if (query.cursor) {
+    const cursorIdx = scored.findIndex((s) => s.event.id === query.cursor)
+    if (cursorIdx === -1) {
+      return { data: [], nextCursor: null }
+    }
+    startIndex = cursorIdx + 1
+  }
   const page = scored.slice(startIndex, startIndex + query.limit)
   const data = page.map((s) => s.event)
   const nextCursor =

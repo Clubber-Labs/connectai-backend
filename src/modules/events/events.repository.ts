@@ -134,12 +134,15 @@ export async function findPublicEvents(
   viewerId?: string,
   now: Date = new Date(),
 ) {
+  const KNN_OVERFETCH = 5
+  const KNN_OVERFETCH_CAP = 500
+
   let spatialIdFilter: string[] | undefined
 
   if (filters.orderBy === 'distance' && filters.nearLat !== undefined && filters.nearLng !== undefined) {
     spatialIdFilter = await findEventIdsByDistance(
       { latitude: filters.nearLat, longitude: filters.nearLng },
-      limit,
+      Math.min(limit * KNN_OVERFETCH, KNN_OVERFETCH_CAP),
     )
     if (spatialIdFilter.length === 0) return []
   } else if (filters.radiusKm !== undefined && filters.nearLat !== undefined && filters.nearLng !== undefined) {
@@ -171,7 +174,7 @@ export async function findPublicEvents(
           }
         : {}),
     },
-    take: limit,
+    take: filters.orderBy === 'distance' ? undefined : limit,
     ...(cursor && filters.orderBy !== 'distance' && { skip: 1, cursor: { id: cursor } }),
     orderBy: [{ date: 'asc' }, { id: 'asc' }],
     include: buildEventIncludes(viewerId),
@@ -182,6 +185,7 @@ export async function findPublicEvents(
       ? spatialIdFilter
           .map((id) => events.find((e) => e.id === id))
           .filter((e): e is PrismaEvent => e !== undefined)
+          .slice(0, limit)
       : events
 
   return ordered.map((e) => normalizeEvent(e, viewerId, now))
@@ -212,7 +216,13 @@ export async function findEventsByAuthor(
 export async function findEventAccess(id: string) {
   return prisma.event.findUnique({
     where: { id },
-    select: { id: true, isPublic: true, authorId: true },
+    select: {
+      id: true,
+      isPublic: true,
+      authorId: true,
+      date: true,
+      endDate: true,
+    },
   })
 }
 
@@ -272,6 +282,7 @@ export async function findEventsForMap(
   const events = await prisma.event.findMany({
     where: {
       id: { in: idsInBbox },
+      isPublic: true,
       ...buildLifecycleWhere({
         includePast: false,
         status: query.status,

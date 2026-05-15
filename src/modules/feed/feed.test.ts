@@ -545,6 +545,20 @@ describe('GET /feed — ranking', () => {
     const ids2 = body2.data.map((e: { id: string }) => e.id)
     expect(ids1.some((id: string) => ids2.includes(id))).toBe(false)
   })
+
+  it('cursor inválido retorna página vazia em vez de duplicar', async () => {
+    const viewer = await makeUser()
+    await makeEvent(viewer.id, { isPublic: true })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/feed?limit=3&cursor=00000000-0000-0000-0000-000000000000',
+      headers: { authorization: `Bearer ${token(app, viewer.id)}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ data: [], nextCursor: null })
+  })
 })
 
 describe('GET /feed — reason', () => {
