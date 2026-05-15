@@ -641,7 +641,7 @@ describe('GET /feed — reason', () => {
     const author = await makeUser()
     await makeFollow(viewer.id, followed.id)
     const event = await makeEvent(author.id, { isPublic: true })
-    await makeReaction(followed.id, event.id, 'LIKE')
+    await makeReaction(followed.id, event.id)
 
     const res = await app.inject({
       method: 'GET',
@@ -653,7 +653,6 @@ describe('GET /feed — reason', () => {
     expect(found?.reason).toMatchObject({
       kind: 'friend_reacted',
       user: { id: followed.id },
-      type: 'LIKE',
     })
   })
 

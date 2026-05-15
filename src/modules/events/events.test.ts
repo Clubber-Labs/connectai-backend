@@ -291,7 +291,7 @@ describe('GET /events', () => {
     expect(body.data.length).toBeGreaterThan(0)
     expect(body.data[0]).toMatchObject({
       recentComments: [],
-      userReaction: null,
+      userLiked: false,
       userAttendance: null,
     })
   })

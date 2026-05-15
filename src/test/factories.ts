@@ -103,13 +103,21 @@ export async function makeReport(
   })
 }
 
-export async function makeReaction(
-  userId: string,
-  eventId: string,
-  type: 'LIKE' | 'LOVE' | 'HAHA' | 'WOW' | 'SAD' | 'ANGRY' = 'LIKE',
-) {
+export async function makeReaction(userId: string, eventId: string) {
   return testPrisma.reaction.create({
-    data: { userId, eventId, type },
+    data: { userId, eventId },
+  })
+}
+
+export async function makePostReaction(userId: string, postId: string) {
+  return testPrisma.reaction.create({
+    data: { userId, postId },
+  })
+}
+
+export async function makeCommentReaction(userId: string, commentId: string) {
+  return testPrisma.commentReaction.create({
+    data: { userId, commentId },
   })
 }
 

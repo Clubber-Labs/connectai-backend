@@ -34,6 +34,20 @@ const eventImageSelect = {
   order: true,
 } as const
 
+function buildCommentInclude(viewerId?: string) {
+  return {
+    author: { select: authorSelect },
+    _count: { select: { reactions: true } },
+    ...(viewerId && {
+      reactions: {
+        where: { userId: viewerId },
+        select: { id: true },
+        take: 1,
+      },
+    }),
+  } satisfies Prisma.CommentInclude
+}
+
 function buildEventIncludes(viewerId?: string): Prisma.EventInclude {
   return {
     author: { select: authorSelect },
@@ -43,7 +57,7 @@ function buildEventIncludes(viewerId?: string): Prisma.EventInclude {
     comments: {
       orderBy: { createdAt: 'desc' },
       take: 2,
-      include: { author: { select: authorSelect } },
+      include: buildCommentInclude(viewerId),
     },
     images: {
       orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
@@ -52,7 +66,7 @@ function buildEventIncludes(viewerId?: string): Prisma.EventInclude {
     ...(viewerId && {
       reactions: {
         where: { userId: viewerId },
-        select: { type: true },
+        select: { id: true },
         take: 1,
       },
       attendances: {
@@ -69,27 +83,35 @@ type PrismaEvent = Prisma.EventGetPayload<{
     author: { select: typeof authorSelect }
     _count: { select: { attendances: true; reactions: true; comments: true } }
     comments: {
-      include: { author: { select: typeof authorSelect } }
+      include: {
+        author: { select: typeof authorSelect }
+        _count: { select: { reactions: true } }
+        reactions: { select: { id: true } }
+      }
     }
     images: { select: typeof eventImageSelect }
-    reactions: { select: { type: true } }
+    reactions: { select: { id: true } }
     attendances: { select: { type: true } }
   }
 }>
 
 type AuthorPayload = Prisma.UserGetPayload<{ select: typeof authorSelect }>
 
+export type NormalizedComment = {
+  id: string
+  content: string
+  createdAt: Date
+  author: AuthorPayload
+  reactionsCount: number
+  userLiked: boolean
+}
+
 export type NormalizedEvent = Omit<
   PrismaEvent,
   'reactions' | 'attendances' | 'comments'
 > & {
-  recentComments: {
-    id: string
-    content: string
-    createdAt: Date
-    author: AuthorPayload
-  }[]
-  userReaction: string | null
+  recentComments: NormalizedComment[]
+  userLiked: boolean
   userAttendance: string | null
   status: EventStatus
 }
@@ -108,8 +130,10 @@ function normalizeEvent(
       content: c.content,
       createdAt: c.createdAt,
       author: c.author,
+      reactionsCount: c._count.reactions,
+      userLiked: !!(viewerId && c.reactions?.length),
     })),
-    userReaction: viewerId && reactions?.length ? reactions[0].type : null,
+    userLiked: !!(viewerId && reactions?.length),
     userAttendance:
       viewerId && attendances?.length ? attendances[0].type : null,
     status: computeEventStatus(event, now),
