@@ -1,5 +1,13 @@
-import type { Prisma } from '@prisma/client'
+import { type AttendanceType, Prisma } from '@prisma/client'
+import { buildLifecycleWhere } from '../../lib/event-filters'
+import { computeEventStatus } from '../../lib/event-lifecycle'
 import { prisma } from '../../lib/prisma'
+import { buildCommentInclude } from '../comments/comments.repository'
+import type { FeedQuery } from './feed.schema'
+
+const PREFERRED_CATEGORIES_LIMIT = 3
+
+const POSITIVE_ATTENDANCE: AttendanceType[] = ['CONFIRMED', 'INTERESTED']
 
 const authorSelect = {
   id: true,
@@ -15,14 +23,13 @@ export type FeedReason =
   | { kind: 'self_created' }
   | { kind: 'friend_created'; user: FeedUser }
   | { kind: 'friend_attending'; user: FeedUser; type: string }
-  | { kind: 'friend_reacted'; user: FeedUser; type: string }
+  | { kind: 'friend_reacted'; user: FeedUser }
   | { kind: 'friend_commented'; user: FeedUser; preview: string }
   | { kind: 'self_interaction' }
 
 type FriendReactionRow = {
   eventId: string | null
   userId: string
-  type: string
   user: FeedUser
 }
 type FriendCommentRow = {
@@ -39,14 +46,14 @@ function resolveReason(
   viewerId: string,
   followingIds: string[],
   userAttendance: string | null,
-  userReaction: string | null,
+  userLiked: boolean,
   friendAttendances: { userId: string; type: string; user: FeedUser }[],
   friendReactionsByEvent: Map<string, FriendReactionRow>,
   friendCommentsByEvent: Map<string, FriendCommentRow>,
 ): FeedReason {
   if (authorId === viewerId) return { kind: 'self_created' }
 
-  if (userAttendance !== null || userReaction !== null)
+  if (userAttendance !== null || userLiked)
     return { kind: 'self_interaction' }
 
   if (followingIds.includes(authorId)) {
@@ -62,8 +69,7 @@ function resolveReason(
     }
 
   const reaction = friendReactionsByEvent.get(eventId)
-  if (reaction)
-    return { kind: 'friend_reacted', user: reaction.user, type: reaction.type }
+  if (reaction) return { kind: 'friend_reacted', user: reaction.user }
 
   const comment = friendCommentsByEvent.get(eventId)
   if (comment)
@@ -76,19 +82,53 @@ function resolveReason(
   return { kind: 'self_interaction' }
 }
 
-export async function findFeedEvents(
+export async function findFeedCandidates(
   viewerId: string,
   followingIds: string[],
-  limit: number,
+  query: FeedQuery,
+  take: number,
   cursor?: string,
 ) {
+  const now = new Date()
+
+  const lifecycleWhere = buildLifecycleWhere({
+    includePast: query.includePast,
+    status: query.status,
+    now,
+  })
+
+  const dateRange =
+    query.dateFrom || query.dateTo
+      ? {
+          date: {
+            ...(query.dateFrom && { gte: new Date(query.dateFrom) }),
+            ...(query.dateTo && { lte: new Date(query.dateTo) }),
+          },
+        }
+      : null
+
+  const categoryWhere =
+    query.category && query.category.length > 0
+      ? { category: { in: query.category } }
+      : null
+
   const events = await prisma.event.findMany({
     where: {
       AND: [
+        lifecycleWhere,
+        ...(categoryWhere ? [categoryWhere] : []),
+        ...(dateRange ? [dateRange] : []),
         {
           OR: [
             { authorId: { in: [...followingIds, viewerId] } },
-            { attendances: { some: { userId: { in: followingIds } } } },
+            {
+              attendances: {
+                some: {
+                  userId: { in: followingIds },
+                  type: { in: POSITIVE_ATTENDANCE },
+                },
+              },
+            },
             { reactions: { some: { userId: { in: followingIds } } } },
             { comments: { some: { authorId: { in: followingIds } } } },
           ],
@@ -102,26 +142,29 @@ export async function findFeedEvents(
         },
       ],
     },
-    take: limit,
+    take,
     ...(cursor && { skip: 1, cursor: { id: cursor } }),
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     include: {
       author: { select: authorSelect },
       attendances: {
-        where: { userId: { in: followingIds } },
+        where: {
+          userId: { in: followingIds },
+          type: { in: POSITIVE_ATTENDANCE },
+        },
         include: { user: { select: authorSelect } },
         orderBy: { createdAt: 'desc' as const },
         take: 3,
       },
       reactions: {
         where: { userId: viewerId },
-        select: { type: true },
+        select: { id: true },
         take: 1,
       },
       comments: {
         orderBy: { createdAt: 'desc' as const },
         take: 2,
-        include: { author: { select: authorSelect } },
+        include: buildCommentInclude(viewerId),
       },
       images: {
         orderBy: [{ order: 'asc' as const }, { createdAt: 'asc' as const }],
@@ -134,7 +177,11 @@ export async function findFeedEvents(
         },
       },
       _count: {
-        select: { attendances: true, comments: true, reactions: true },
+        select: {
+          attendances: { where: { type: { in: POSITIVE_ATTENDANCE } } },
+          comments: true,
+          reactions: true,
+        },
       },
     },
   })
@@ -155,7 +202,6 @@ export async function findFeedEvents(
             select: {
               eventId: true,
               userId: true,
-              type: true,
               user: { select: authorSelect },
             },
             orderBy: [
@@ -202,14 +248,7 @@ export async function findFeedEvents(
     const { reactions, attendances, comments, ...rest } = event
 
     const userAttendance = viewerAttendanceMap.get(event.id) ?? null
-    const userReaction = reactions.length
-      ? (reactions[0] as { type: string }).type
-      : null
-    const friendAttendanceList = attendances as unknown as {
-      userId: string
-      type: string
-      user: FeedUser
-    }[]
+    const userLiked = reactions.length > 0
 
     const reason = resolveReason(
       event.id,
@@ -218,31 +257,27 @@ export async function findFeedEvents(
       viewerId,
       followingIds,
       userAttendance,
-      userReaction,
-      friendAttendanceList,
+      userLiked,
+      attendances,
       friendReactionsByEvent,
       friendCommentsByEvent,
     )
 
     return {
       ...rest,
-      friendAttendances: friendAttendanceList.map((a) => ({ user: a.user })),
-      recentComments: (
-        comments as unknown as {
-          id: string
-          content: string
-          createdAt: Date
-          author: FeedUser
-        }[]
-      ).map((c) => ({
+      friendAttendances: attendances.map((a) => ({ user: a.user })),
+      recentComments: comments.map((c) => ({
         id: c.id,
         content: c.content,
         createdAt: c.createdAt,
         author: c.author,
+        reactionsCount: c._count.reactions,
+        userLiked: c.reactions.length > 0,
       })),
-      userReaction,
+      userLiked,
       userAttendance,
       reason,
+      status: computeEventStatus(event, now),
     }
   })
 }
@@ -253,4 +288,28 @@ export async function findFollowingIds(userId: string) {
     select: { followingId: true },
   })
   return follows.map((f) => f.followingId)
+}
+
+/**
+ * Top categorias do histórico do usuário (eventos criados ou com presença).
+ * Retorna até PREFERRED_CATEGORIES_LIMIT, em ordem de frequência decrescente.
+ */
+export async function findUserPreferredCategories(
+  userId: string,
+): Promise<string[]> {
+  const rows = await prisma.$queryRaw<{ category: string }[]>(
+    Prisma.sql`
+      SELECT e.category
+      FROM events e
+      LEFT JOIN event_attendances a
+        ON a."eventId" = e.id
+        AND a."userId" = ${userId}
+        AND a.type IN ('CONFIRMED', 'INTERESTED')
+      WHERE e."authorId" = ${userId} OR a."userId" = ${userId}
+      GROUP BY e.category
+      ORDER BY COUNT(*) DESC, e.category ASC
+      LIMIT ${PREFERRED_CATEGORIES_LIMIT}
+    `,
+  )
+  return rows.map((r) => r.category)
 }

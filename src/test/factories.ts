@@ -26,18 +26,28 @@ export async function makeUser(
 
 export async function makeEvent(
   authorId: string,
-  overrides: { isPublic?: boolean; category?: string } = {},
+  overrides: {
+    isPublic?: boolean
+    category?: string
+    date?: Date
+    endDate?: Date | null
+    canceledAt?: Date | null
+    latitude?: number
+    longitude?: number
+  } = {},
 ) {
   const id = uid()
   return testPrisma.event.create({
     data: {
       title: `Event ${id}`,
       description: `Description ${id}`,
-      date: new Date(Date.now() + 86400000),
-      latitude: -25.4,
-      longitude: -49.3,
+      date: overrides.date ?? new Date(Date.now() + 86400000),
+      endDate: overrides.endDate ?? null,
+      latitude: overrides.latitude ?? -25.4,
+      longitude: overrides.longitude ?? -49.3,
       category: overrides.category ?? 'Festa',
       isPublic: overrides.isPublic ?? true,
+      canceledAt: overrides.canceledAt ?? null,
       authorId,
     },
   })
@@ -98,13 +108,21 @@ export async function makeReport(
   })
 }
 
-export async function makeReaction(
-  userId: string,
-  eventId: string,
-  type: 'LIKE' | 'LOVE' | 'HAHA' | 'WOW' | 'SAD' | 'ANGRY' = 'LIKE',
-) {
+export async function makeReaction(userId: string, eventId: string) {
   return testPrisma.reaction.create({
-    data: { userId, eventId, type },
+    data: { userId, eventId },
+  })
+}
+
+export async function makePostReaction(userId: string, postId: string) {
+  return testPrisma.reaction.create({
+    data: { userId, postId },
+  })
+}
+
+export async function makeCommentReaction(userId: string, commentId: string) {
+  return testPrisma.commentReaction.create({
+    data: { userId, commentId },
   })
 }
 

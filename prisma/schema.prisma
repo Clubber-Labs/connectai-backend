@@ -34,6 +34,7 @@ model User {
   posts            Post[]
   comments         Comment[]
   reactions        Reaction[]
+  commentReactions CommentReaction[]
   eventInvitesSent EventInvite[]     @relation("inviter")
   eventInvitesReceived EventInvite[] @relation("invited")
 
@@ -70,6 +71,7 @@ model Event {
   title       String
   description String
   date        DateTime
+  endDate     DateTime?
   latitude    Float
   longitude   Float
   address     String?
@@ -91,6 +93,8 @@ model Event {
   reports     Report[]
   images      EventImage[]
 
+  @@index([date])
+  @@index([isPublic, date])
   @@map("events")
 }
 
@@ -113,15 +117,6 @@ model EventAttendance {
   @@unique([userId, eventId])
   @@index([eventId, createdAt])
   @@map("event_attendances")
-}
-
-enum ReactionType {
-  LIKE
-  LOVE
-  HAHA
-  WOW
-  SAD
-  ANGRY
 }
 
 model Post {
@@ -154,7 +149,8 @@ model Comment {
   event  Event? @relation(fields: [eventId], references: [id], onDelete: Cascade)
   post   Post?  @relation(fields: [postId], references: [id], onDelete: Cascade)
   reports Report[]
-  
+  reactions CommentReaction[]
+
   @@index([eventId, createdAt])
   @@index([postId, createdAt])
   @@map("comments")
@@ -177,13 +173,11 @@ model EventInvite {
 }
 
 model Reaction {
-  id        String       @id @default(uuid())
-  type      ReactionType
+  id        String   @id @default(uuid())
   userId    String
   eventId   String?
   postId    String?
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  createdAt DateTime @default(now())
 
   user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   event Event? @relation(fields: [eventId], references: [id], onDelete: Cascade)
@@ -192,6 +186,20 @@ model Reaction {
   @@unique([userId, eventId], map: "reactions_user_event_unique")
   @@unique([userId, postId], map: "reactions_user_post_unique")
   @@map("reactions")
+}
+
+model CommentReaction {
+  id        String   @id @default(uuid())
+  userId    String
+  commentId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, commentId], map: "comment_reactions_user_comment_unique")
+  @@index([commentId])
+  @@map("comment_reactions")
 }
 
 enum ReportReason {
