@@ -9,7 +9,7 @@ import { stripe } from '../../lib/stripe'
 import {
   isEventProcessed,
   markEventProcessedTx,
-  updateUserPremiumTx,
+  recalculateUserPremiumTx,
   upsertSubscriptionTx,
 } from './billing.repository'
 
@@ -57,14 +57,6 @@ function mapStatus(stripeStatus: string): SubscriptionStatus {
     default:
       return 'INCOMPLETE'
   }
-}
-
-/**
- * Statuses que dão direito a usufruir do premium. PAST_DUE inclui porque
- * Stripe ainda está tentando cobrar (retry); só desliga após CANCELED.
- */
-function shouldBePremium(status: SubscriptionStatus): boolean {
-  return status === 'TRIALING' || status === 'ACTIVE' || status === 'PAST_DUE'
 }
 
 type StripeSubscriptionLike = {
@@ -219,12 +211,47 @@ async function preResolveSubscription(
   }
 }
 
+type StripeSetupIntentLike = {
+  customer?: string | { id: string } | null
+  payment_method?: string | { id: string } | null
+}
+
+/**
+ * Side-effect externo do setup_intent.succeeded: define o novo cartão como
+ * default_payment_method do Customer (Stripe NÃO faz isso automaticamente
+ * só por anexar o método via SetupIntent). Sem essa chamada, renovações
+ * futuras continuariam cobrando o cartão antigo.
+ *
+ * Roda FORA da $transaction (regra: nunca Stripe dentro de tx). Idempotente:
+ * chamar 2x com mesmo customer/payment_method é no-op.
+ */
+async function applySetupIntentSucceeded(event: StripeEvent): Promise<void> {
+  const intent = event.data.object as StripeSetupIntentLike
+  const customerId =
+    typeof intent.customer === 'string'
+      ? intent.customer
+      : intent.customer?.id
+  const paymentMethodId =
+    typeof intent.payment_method === 'string'
+      ? intent.payment_method
+      : intent.payment_method?.id
+  if (!customerId || !paymentMethodId) return
+
+  await stripe.customers.update(customerId, {
+    invoice_settings: { default_payment_method: paymentMethodId },
+  })
+}
+
 async function applyEvent(event: StripeEvent): Promise<void> {
   const eventCreated = new Date(event.created * 1000)
 
   // FORA da transação: chamadas externas ao Stripe. Mantém a tx limpa de
   // I/O remoto (cumpre regra "nunca chamar Stripe dentro de $transaction").
   const preResolved = await preResolveSubscription(event)
+
+  if (event.type === 'setup_intent.succeeded') {
+    await applySetupIntentSucceeded(event)
+  }
 
   await prisma.$transaction(
     async (tx) => {
@@ -264,16 +291,30 @@ async function applyEvent(event: StripeEvent): Promise<void> {
 
           const fields = mapStripeSubscription(preResolved)
 
+          // Ordering check (igual aos outros cases): se já existe uma
+          // subscription local mais nova, descarta o checkout retroativo.
+          // Cenário: subscription.deleted chega ANTES do checkout.completed
+          // por causa de retry/rede; sem isso, o checkout reativa premium
+          // incorretamente.
+          const existingForCheckout = await tx.subscription.findUnique({
+            where: { stripeSubscriptionId: fields.stripeSubscriptionId },
+          })
+          if (
+            existingForCheckout &&
+            isEventOlder(eventCreated, existingForCheckout.lastSyncedAt)
+          )
+            return
+
           await upsertSubscriptionTx(tx, {
             userId: user.id,
             ...fields,
             lastSyncedAt: eventCreated,
           })
 
-          await updateUserPremiumTx(tx, {
-            userId: user.id,
-            isPremium: shouldBePremium(fields.status),
-          })
+          // Recalcula isPremium baseado em TODAS as subscriptions do user,
+          // não só na desta operação. User pode ter outra subscription
+          // ativa em paralelo (raro mas permitido pelo schema).
+          await recalculateUserPremiumTx(tx, user.id)
           return
         }
 
@@ -311,10 +352,7 @@ async function applyEvent(event: StripeEvent): Promise<void> {
             lastSyncedAt: eventCreated,
           })
 
-          await updateUserPremiumTx(tx, {
-            userId,
-            isPremium: shouldBePremium(fields.status),
-          })
+          await recalculateUserPremiumTx(tx, userId)
           return
         }
 
@@ -336,17 +374,14 @@ async function applyEvent(event: StripeEvent): Promise<void> {
             lastSyncedAt: eventCreated,
           })
 
-          await updateUserPremiumTx(tx, {
-            userId: existing.userId,
-            isPremium: shouldBePremium(fields.status),
-          })
+          await recalculateUserPremiumTx(tx, existing.userId)
           return
         }
 
         case 'setup_intent.succeeded': {
-          // Default payment method já é atualizado automaticamente pelo
-          // Stripe quando o SetupIntent.usage='off_session' completa.
-          // Nada a fazer localmente.
+          // Side-effect (atualizar default payment method no Stripe) é
+          // executado fora da transação, em applyEvent(). Aqui só registra
+          // como processado.
           return
         }
 

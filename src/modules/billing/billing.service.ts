@@ -78,11 +78,19 @@ export async function createCheckoutSession(
   let customerId = user.stripeCustomerId
   if (!customerId) {
     try {
-      const customer = await stripe.customers.create({
-        email: user.email,
-        name: `${user.name} ${user.lastname}`.trim(),
-        metadata: { userId: user.id },
-      })
+      // idempotencyKey por userId protege contra race em requests concorrentes:
+      // Stripe retorna o MESMO Customer pra retries dentro de 24h. Sem isso,
+      // dois cliques simultâneos no botão "Subscribe" criavam 2 Customers,
+      // o segundo update do DB vencia, e webhook do pagamento do primeiro
+      // Customer não encontrava user → user pagava sem virar premium.
+      const customer = await stripe.customers.create(
+        {
+          email: user.email,
+          name: `${user.name} ${user.lastname}`.trim(),
+          metadata: { userId: user.id },
+        },
+        { idempotencyKey: `customer_${user.id}` },
+      )
       customerId = customer.id
       await prisma.user.update({
         where: { id: user.id },
@@ -98,18 +106,26 @@ export async function createCheckoutSession(
   const trialDays = alreadyHadSubscription ? undefined : 7
 
   try {
-    const session = await stripe.checkout.sessions.create({
-      mode: 'subscription',
-      customer: customerId,
-      line_items: [{ price: env.STRIPE_PREMIUM_PRICE_ID, quantity: 1 }],
-      success_url: overrides?.successUrl ?? env.STRIPE_CHECKOUT_SUCCESS_URL,
-      cancel_url: overrides?.cancelUrl ?? env.STRIPE_CHECKOUT_CANCEL_URL,
-      subscription_data: {
-        ...(trialDays !== undefined && { trial_period_days: trialDays }),
+    // idempotencyKey com bucket de 1 minuto: bloqueia clicks duplicados em
+    // sequência rápida (2 abas, dupla submissão), mas permite retentativas
+    // legítimas após o intervalo. Stripe retorna a MESMA Session no bucket
+    // ativo, evitando 2 Subscriptions paralelas pro mesmo user/intenção.
+    const minuteBucket = Math.floor(Date.now() / 60_000)
+    const session = await stripe.checkout.sessions.create(
+      {
+        mode: 'subscription',
+        customer: customerId,
+        line_items: [{ price: env.STRIPE_PREMIUM_PRICE_ID, quantity: 1 }],
+        success_url: overrides?.successUrl ?? env.STRIPE_CHECKOUT_SUCCESS_URL,
+        cancel_url: overrides?.cancelUrl ?? env.STRIPE_CHECKOUT_CANCEL_URL,
+        subscription_data: {
+          ...(trialDays !== undefined && { trial_period_days: trialDays }),
+          metadata: { userId: user.id },
+        },
         metadata: { userId: user.id },
       },
-      metadata: { userId: user.id },
-    })
+      { idempotencyKey: `checkout_${user.id}_${minuteBucket}` },
+    )
 
     return { url: session.url }
   } catch (err) {

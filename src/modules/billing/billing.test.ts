@@ -1,13 +1,15 @@
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { FastifyInstance } from 'fastify'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { stripe } from '../../lib/stripe'
+import { buildApp } from '../../test/app'
 import { makeSubscription, makeUser } from '../../test/factories'
 import { testPrisma } from '../../test/prisma'
 import {
   findActiveSubscriptionByUserId,
-  findSubscriptionByStripeId,
   hasAnyPreviousSubscription,
   isEventProcessed,
   markEventProcessedTx,
+  recalculateUserPremiumTx,
   updateUserPremiumTx,
   updateUserStripeCustomerIdTx,
   upsertSubscriptionTx,
@@ -210,22 +212,61 @@ describe('repository', () => {
     })
   })
 
-  describe('findSubscriptionByStripeId', () => {
-    it('retorna subscription quando existe', async () => {
-      const user = await makeUser()
-      const sub = await makeSubscription(user.id, {
-        stripeSubscriptionId: 'sub_lookup_target',
+  describe('recalculateUserPremiumTx', () => {
+    it('seta isPremium=true quando user tem subscription ACTIVE', async () => {
+      const user = await makeUser({ isPremium: false })
+      await makeSubscription(user.id, { status: 'ACTIVE' })
+
+      await testPrisma.$transaction(async (tx) => {
+        await recalculateUserPremiumTx(tx, user.id)
       })
 
-      const found = await findSubscriptionByStripeId('sub_lookup_target')
-
-      expect(found?.id).toBe(sub.id)
+      const updated = await testPrisma.user.findUnique({
+        where: { id: user.id },
+      })
+      expect(updated?.isPremium).toBe(true)
     })
 
-    it('retorna null quando não existe', async () => {
-      const found = await findSubscriptionByStripeId('sub_does_not_exist')
+    it('seta isPremium=false quando todas subscriptions são CANCELED', async () => {
+      const user = await makeUser({ isPremium: true })
+      await makeSubscription(user.id, {
+        stripeSubscriptionId: 'sub_a',
+        status: 'CANCELED',
+      })
+      await makeSubscription(user.id, {
+        stripeSubscriptionId: 'sub_b',
+        status: 'CANCELED',
+      })
 
-      expect(found).toBeNull()
+      await testPrisma.$transaction(async (tx) => {
+        await recalculateUserPremiumTx(tx, user.id)
+      })
+
+      const updated = await testPrisma.user.findUnique({
+        where: { id: user.id },
+      })
+      expect(updated?.isPremium).toBe(false)
+    })
+
+    it('mantém isPremium=true se UMA subscription está ativa (mesmo com outra cancelada)', async () => {
+      const user = await makeUser({ isPremium: true })
+      await makeSubscription(user.id, {
+        stripeSubscriptionId: 'sub_old',
+        status: 'CANCELED',
+      })
+      await makeSubscription(user.id, {
+        stripeSubscriptionId: 'sub_new',
+        status: 'TRIALING',
+      })
+
+      await testPrisma.$transaction(async (tx) => {
+        await recalculateUserPremiumTx(tx, user.id)
+      })
+
+      const updated = await testPrisma.user.findUnique({
+        where: { id: user.id },
+      })
+      expect(updated?.isPremium).toBe(true)
     })
   })
 
@@ -422,6 +463,9 @@ describe('service', () => {
 
       expect(stripe.customers.create).toHaveBeenCalledWith(
         expect.objectContaining({ email: user.email }),
+        expect.objectContaining({
+          idempotencyKey: expect.stringContaining('customer_'),
+        }),
       )
       expect(result.url).toBe('https://checkout.stripe.com/sess_123')
 
@@ -447,6 +491,9 @@ describe('service', () => {
       expect(stripe.customers.create).not.toHaveBeenCalled()
       expect(stripe.checkout.sessions.create).toHaveBeenCalledWith(
         expect.objectContaining({ customer: 'cus_existing' }),
+        expect.objectContaining({
+          idempotencyKey: expect.stringContaining('checkout_'),
+        }),
       )
     })
 
@@ -466,6 +513,9 @@ describe('service', () => {
           subscription_data: expect.objectContaining({
             trial_period_days: 7,
           }),
+        }),
+        expect.objectContaining({
+          idempotencyKey: expect.stringContaining('checkout_'),
         }),
       )
     })
@@ -888,6 +938,152 @@ describe('processStripeWebhook', () => {
         where: { id: user.id },
       })
       expect(refreshed?.isPremium).toBe(true)
+    })
+  })
+})
+
+// ─── Routes E2E (via app.inject) ─────────────────────────────────────────────
+// Cobre o wiring HTTP que os testes de service/webhook não exercem:
+// autenticação (preHandler de auth), rate-limit (config da rota) e propagação
+// do rawBody pro handler do webhook (plugin escopado em billingWebhookRoutes).
+
+describe('routes E2E', () => {
+  let app: FastifyInstance
+
+  beforeAll(async () => {
+    app = buildApp()
+    await app.ready()
+  })
+
+  afterAll(async () => {
+    await app.close()
+  })
+
+  describe('autenticação', () => {
+    it('POST /billing/checkout retorna 401 sem token', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/billing/checkout',
+        payload: {},
+      })
+      expect(res.statusCode).toBe(401)
+    })
+
+    it('POST /billing/checkout retorna 200 com token válido', async () => {
+      const user = await makeUser()
+      vi.mocked(stripe.customers.create).mockResolvedValue({
+        id: 'cus_e2e',
+        // biome-ignore lint/suspicious/noExplicitAny: fixture parcial de Customer
+      } as any)
+      vi.mocked(stripe.checkout.sessions.create).mockResolvedValue({
+        url: 'https://checkout.stripe.com/test_e2e',
+        // biome-ignore lint/suspicious/noExplicitAny: fixture parcial de Session
+      } as any)
+
+      const token = app.jwt.sign({ sub: user.id })
+      const res = await app.inject({
+        method: 'POST',
+        url: '/billing/checkout',
+        headers: { authorization: `Bearer ${token}` },
+        payload: {},
+      })
+
+      expect(res.statusCode).toBe(200)
+      expect(res.json()).toEqual({ url: 'https://checkout.stripe.com/test_e2e' })
+    })
+  })
+
+  describe('rate-limit', () => {
+    it('POST /billing/checkout retorna 429 após 10 requests no minuto', async () => {
+      const user = await makeUser()
+      vi.mocked(stripe.customers.create).mockResolvedValue({
+        id: 'cus_rl',
+        // biome-ignore lint/suspicious/noExplicitAny: fixture parcial
+      } as any)
+      vi.mocked(stripe.checkout.sessions.create).mockResolvedValue({
+        url: 'https://checkout.stripe.com/rl',
+        // biome-ignore lint/suspicious/noExplicitAny: fixture parcial
+      } as any)
+      const token = app.jwt.sign({ sub: user.id })
+      const headers = { authorization: `Bearer ${token}` }
+
+      for (let i = 0; i < 10; i++) {
+        const ok = await app.inject({
+          method: 'POST',
+          url: '/billing/checkout',
+          headers,
+          payload: {},
+        })
+        // Pode ser 200 (sem subscription) ou 409 (subscription criada no 1º
+        // request) — ambos contam como "request processado" pro rate-limit.
+        expect([200, 409]).toContain(ok.statusCode)
+      }
+
+      const blocked = await app.inject({
+        method: 'POST',
+        url: '/billing/checkout',
+        headers,
+        payload: {},
+      })
+      expect(blocked.statusCode).toBe(429)
+    })
+  })
+
+  describe('raw body do webhook', () => {
+    it('POST /webhooks/stripe propaga rawBody pro constructEvent e processa', async () => {
+      const user = await makeUser()
+      await testPrisma.user.update({
+        where: { id: user.id },
+        data: { stripeCustomerId: 'cus_raw' },
+      })
+      const rawPayload = Buffer.from(
+        JSON.stringify({ raw: 'payload', user: user.id }),
+      )
+
+      const event = checkoutSessionCompletedFixture({
+        userId: user.id,
+        customerId: 'cus_raw',
+        subscriptionId: 'sub_raw_e2e',
+        eventId: 'evt_raw_e2e',
+      })
+      vi.mocked(stripe.webhooks.constructEvent).mockReturnValue(event)
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/webhooks/stripe',
+        headers: {
+          'content-type': 'application/json',
+          'stripe-signature': 't=1,v1=fake',
+        },
+        payload: rawPayload,
+      })
+
+      expect(res.statusCode).toBe(200)
+      expect(res.json()).toEqual({ received: true })
+      // constructEvent recebe o Buffer original (a verificação de assinatura
+      // só passa se o byte stream chegou intacto ao handler)
+      const [receivedBody, receivedSig] = vi.mocked(
+        stripe.webhooks.constructEvent,
+      ).mock.calls[0]
+      expect(Buffer.isBuffer(receivedBody)).toBe(true)
+      expect((receivedBody as Buffer).equals(rawPayload)).toBe(true)
+      expect(receivedSig).toBe('t=1,v1=fake')
+
+      const persisted = await testPrisma.webhookEvent.findUnique({
+        where: { stripeEventId: 'evt_raw_e2e' },
+      })
+      expect(persisted).not.toBeNull()
+    })
+
+    it('POST /webhooks/stripe retorna 400 quando rawBody está ausente', async () => {
+      // Sem payload, fastify-raw-body não popula request.rawBody;
+      // o handler responde 400 antes de chamar a Stripe.
+      const res = await app.inject({
+        method: 'POST',
+        url: '/webhooks/stripe',
+        headers: { 'stripe-signature': 't=1,v1=fake' },
+      })
+      expect(res.statusCode).toBe(400)
     })
   })
 })

@@ -1,7 +1,7 @@
 -- AlterTable: User ganha stripeCustomerId (opcional, único)
 ALTER TABLE "users" ADD COLUMN "stripeCustomerId" TEXT;
 
--- CreateIndex: unique parcial em stripeCustomerId (permite múltiplos NULL)
+-- CreateIndex: unique em stripeCustomerId (coluna opcional; PostgreSQL aceita múltiplos NULL por default em UNIQUE)
 CREATE UNIQUE INDEX "users_stripeCustomerId_key" ON "users"("stripeCustomerId");
 
 -- CreateEnum

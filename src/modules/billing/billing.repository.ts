@@ -16,10 +16,6 @@ export async function findActiveSubscriptionByUserId(userId: string) {
   })
 }
 
-export async function findSubscriptionByStripeId(stripeSubscriptionId: string) {
-  return prisma.subscription.findUnique({ where: { stripeSubscriptionId } })
-}
-
 /**
  * True se o usuário já teve qualquer subscription (ativa, expirada, cancelada).
  * Usado pra decidir se concede trial novo (não concede se já teve).
@@ -59,6 +55,32 @@ export async function updateUserPremiumTx(
   { userId, isPremium }: { userId: string; isPremium: boolean },
 ) {
   return tx.user.update({ where: { id: userId }, data: { isPremium } })
+}
+
+/**
+ * Recalcula User.isPremium baseado em TODAS as subscriptions do user.
+ * Necessário porque o schema permite múltiplas subscriptions (histórico
+ * de canceladas + nova ativa), e atualizar isPremium a partir de UM
+ * evento isolado deixa o estado incorreto quando outra subscription
+ * ainda está ativa.
+ *
+ * isPremium = true se existe pelo menos uma subscription com status em
+ * (TRIALING, ACTIVE, PAST_DUE).
+ */
+export async function recalculateUserPremiumTx(
+  tx: TxClient,
+  userId: string,
+) {
+  const activeCount = await tx.subscription.count({
+    where: {
+      userId,
+      status: { in: ACTIVE_STATUSES },
+    },
+  })
+  return tx.user.update({
+    where: { id: userId },
+    data: { isPremium: activeCount > 0 },
+  })
 }
 
 export async function updateUserStripeCustomerIdTx(
