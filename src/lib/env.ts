@@ -29,6 +29,28 @@ const baseSchema = z.object({
     .enum(['true', 'false', '1', '0'])
     .default('true')
     .transform((v) => v === 'true' || v === '1'),
+  STRIPE_SECRET_KEY: z
+    .string()
+    .regex(
+      /^sk_(test|live)_/,
+      'STRIPE_SECRET_KEY deve começar com sk_test_ ou sk_live_',
+    ),
+  STRIPE_WEBHOOK_SECRET: z
+    .string()
+    .regex(/^whsec_/, 'STRIPE_WEBHOOK_SECRET deve começar com whsec_'),
+  STRIPE_PREMIUM_PRICE_ID: z
+    .string()
+    .regex(/^price_/, 'STRIPE_PREMIUM_PRICE_ID deve começar com price_'),
+  STRIPE_CHECKOUT_SUCCESS_URL: z.url(),
+  STRIPE_CHECKOUT_CANCEL_URL: z.url(),
+  // CSV de hosts (incluir porta se necessário) permitidos para override
+  // de success/cancel URL via body do POST /billing/checkout. Defesa contra
+  // open-redirect: usuário hostil mandando `successUrl: https://evil.com/...`
+  // recebia URL com session_id e potencialmente outras infos sensíveis.
+  // Default cobre apenas localhost de dev.
+  STRIPE_CHECKOUT_ALLOWED_REDIRECT_HOSTS: z
+    .string()
+    .default('localhost:3000,localhost:3333'),
 })
 
 const cloudinarySchema = z.object({
@@ -89,4 +111,13 @@ export const env = {
   FACEBOOK_APP_SECRET: parsed.FACEBOOK_APP_SECRET,
   FEATURED_RECONCILE_INTERVAL_MS: parsed.FEATURED_RECONCILE_INTERVAL_MS,
   FEATURED_RECONCILE_ENABLED: parsed.FEATURED_RECONCILE_ENABLED,
+  STRIPE_SECRET_KEY: parsed.STRIPE_SECRET_KEY,
+  STRIPE_WEBHOOK_SECRET: parsed.STRIPE_WEBHOOK_SECRET,
+  STRIPE_PREMIUM_PRICE_ID: parsed.STRIPE_PREMIUM_PRICE_ID,
+  STRIPE_CHECKOUT_SUCCESS_URL: parsed.STRIPE_CHECKOUT_SUCCESS_URL,
+  STRIPE_CHECKOUT_CANCEL_URL: parsed.STRIPE_CHECKOUT_CANCEL_URL,
+  STRIPE_CHECKOUT_ALLOWED_REDIRECT_HOSTS:
+    parsed.STRIPE_CHECKOUT_ALLOWED_REDIRECT_HOSTS.split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
 } as const
