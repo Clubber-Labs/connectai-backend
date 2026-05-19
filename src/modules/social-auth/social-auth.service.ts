@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto'
-import type { SocialProvider } from '@prisma/client'
+import { Prisma, type SocialProvider } from '@prisma/client'
 import {
   findUserByEmail,
   findUserById,
@@ -15,6 +15,17 @@ import type {
   SocialLoginBody,
   VerifiedSocialProfile,
 } from './social-auth.schema'
+
+const USERNAME_RETRY_ATTEMPTS = 5
+
+function isUsernameUniqueViolation(err: unknown): boolean {
+  if (!(err instanceof Prisma.PrismaClientKnownRequestError)) return false
+  if (err.code !== 'P2002') return false
+  const target = err.meta?.target
+  if (Array.isArray(target)) return target.includes('username')
+  if (typeof target === 'string') return target.includes('username')
+  return false
+}
 
 async function verifyTokenByProvider(
   provider: SocialLoginBody['provider'],
@@ -84,21 +95,36 @@ export async function socialLogin(body: SocialLoginBody) {
     return loadUserAndDecorate(linkable.id)
   }
 
-  const username = await generateUniqueUsername(profile.email)
-  const created = await createUserWithSocialAccount({
-    user: {
-      name: profile.firstName?.trim() || 'Usuário',
-      lastname: profile.lastName?.trim() || 'Social',
-      username,
-      email: profile.email,
-      avatarUrl: profile.pictureUrl,
-    },
-    social: {
-      provider: profile.provider as SocialProvider,
-      providerUserId: profile.providerUserId,
-      email: profile.email,
-    },
-  })
+  const userBase = {
+    name: profile.firstName?.trim() || 'Usuário',
+    lastname: profile.lastName?.trim() || 'Social',
+    email: profile.email,
+    avatarUrl: profile.pictureUrl,
+  }
+  const social = {
+    provider: profile.provider as SocialProvider,
+    providerUserId: profile.providerUserId,
+    email: profile.email,
+  }
 
-  return loadUserAndDecorate(created.id)
+  // Retry em P2002 no username: generateUniqueUsername faz check-then-create,
+  // então dois signups concorrentes podem ler o mesmo candidato livre e o
+  // segundo INSERT estoura o unique constraint. Regenera e tenta de novo.
+  for (let attempt = 0; attempt < USERNAME_RETRY_ATTEMPTS; attempt++) {
+    const username = await generateUniqueUsername(profile.email)
+    try {
+      const created = await createUserWithSocialAccount({
+        user: { ...userBase, username },
+        social,
+      })
+      return loadUserAndDecorate(created.id)
+    } catch (err) {
+      if (!isUsernameUniqueViolation(err)) throw err
+    }
+  }
+
+  throw {
+    statusCode: 500,
+    message: 'Não foi possível gerar username único após múltiplas tentativas',
+  }
 }
