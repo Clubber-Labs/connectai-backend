@@ -15,6 +15,9 @@ const baseSchema = z.object({
     .optional(),
   STORAGE_DRIVER: z.enum(['cloudinary', 'local']).optional(),
   UPLOADS_DIR: z.string().optional(),
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  FACEBOOK_APP_ID: z.string().optional(),
+  FACEBOOK_APP_SECRET: z.string().optional(),
 })
 
 const cloudinarySchema = z.object({
@@ -70,4 +73,7 @@ export const env = {
   UPLOADS_DIR: path.resolve(
     parsed.UPLOADS_DIR ?? path.join(process.cwd(), 'uploads'),
   ),
+  GOOGLE_CLIENT_ID: parsed.GOOGLE_CLIENT_ID,
+  FACEBOOK_APP_ID: parsed.FACEBOOK_APP_ID,
+  FACEBOOK_APP_SECRET: parsed.FACEBOOK_APP_SECRET,
 } as const

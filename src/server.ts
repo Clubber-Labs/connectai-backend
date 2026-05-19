@@ -25,6 +25,7 @@ import { healthRoutes } from './modules/health/health.routes'
 import { postsRoutes } from './modules/posts/posts.routes'
 import { reactionsRoutes } from './modules/reactions/reactions.routes'
 import { reportsRoutes } from './modules/reports/reports.routes'
+import { socialAuthRoutes } from './modules/social-auth/social-auth.routes'
 import { usersRoutes } from './modules/users/users.routes'
 
 const app = fastify().withTypeProvider<ZodTypeProvider>()
@@ -101,6 +102,7 @@ app.register(ScalarApiReference, {
 
 app.register(healthRoutes)
 app.register(authRoutes)
+app.register(socialAuthRoutes)
 app.register(eventsRoutes)
 app.register(usersRoutes)
 app.register(followsRoutes)
