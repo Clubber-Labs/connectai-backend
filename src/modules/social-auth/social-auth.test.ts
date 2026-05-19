@@ -93,6 +93,9 @@ describe('POST /auth/social — signup', () => {
     expect(body).toHaveProperty('token')
     expect(body.profileIncomplete).toBe(true)
     expect(body.user.email).toBe('novogoogle@exemplo.com')
+    // API pública não deve vazar nome interno do Prisma — usa eventsCount.
+    expect(body.user).not.toHaveProperty('_count')
+    expect(body.user.eventsCount).toBe(0)
 
     const social = await testPrisma.socialAccount.findFirst({
       where: { providerUserId: 'google_user_123' },

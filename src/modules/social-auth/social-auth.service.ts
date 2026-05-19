@@ -46,7 +46,7 @@ async function generateUniqueUsername(email: string) {
   const base = sanitizeUsernameBase(email)
   if (!(await findUserByUsername(base))) return base
 
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < USERNAME_RETRY_ATTEMPTS; i++) {
     const candidate = `${base}_${randomBytes(3).toString('hex')}`.slice(0, 25)
     if (!(await findUserByUsername(candidate))) return candidate
   }
@@ -62,8 +62,14 @@ async function loadUserAndDecorate(userId: string) {
       message: 'Usuário não encontrado após autenticação social',
     }
   }
+  // Espelha o shape de getMe/getUserById: achata _count em eventsCount
+  // pra não vazar nome interno do Prisma na resposta pública.
+  const { _count, ...rest } = user
   const profileIncomplete = !user.phone || !user.birthdate
-  return { user, profileIncomplete }
+  return {
+    user: { ...rest, eventsCount: _count.events },
+    profileIncomplete,
+  }
 }
 
 export async function socialLogin(body: SocialLoginBody) {
