@@ -4,26 +4,26 @@ import {
   validatorCompiler,
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod'
-import { login } from './auth.controller'
-import { loginBodySchema } from './auth.schema'
+import { postSocialLogin } from './social-auth.controller'
+import { socialLoginBodySchema } from './social-auth.schema'
 
-export async function authRoutes(app: FastifyInstance) {
+export async function socialAuthRoutes(app: FastifyInstance) {
   app.setValidatorCompiler(validatorCompiler)
   app.setSerializerCompiler(serializerCompiler)
 
   const api = app.withTypeProvider<ZodTypeProvider>()
 
   api.post(
-    '/auth/login',
+    '/auth/social',
     {
-      schema: { body: loginBodySchema },
+      schema: { body: socialLoginBodySchema },
       config: {
         rateLimit: {
-          max: 10,
+          max: 20,
           timeWindow: '1 minute',
         },
       },
     },
-    login,
+    postSocialLogin,
   )
 }

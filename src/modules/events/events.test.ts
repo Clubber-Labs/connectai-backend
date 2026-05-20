@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { redis as nullableRedis } from '../../lib/redis'
 import { buildApp } from '../../test/app'
 import {
   makeAttendance,
@@ -11,6 +12,14 @@ import {
 import { fakeStorage } from '../../test/fake-storage'
 import { multipartFormData, tinyPngBuffer } from '../../test/image-fixture'
 import { testPrisma } from '../../test/prisma'
+
+if (!nullableRedis) {
+  throw new Error(
+    'REDIS_URL deve estar configurada em .env.test para esses testes',
+  )
+}
+
+const redis = nullableRedis
 
 let app: FastifyInstance
 
@@ -348,6 +357,115 @@ describe('GET /events', () => {
 
     const found = res.json().data.find((e: { id: string }) => e.id === event.id)
     expect(found).toBeUndefined()
+  })
+})
+
+describe('cache de GET /events', () => {
+  it('reage não invalida o cache da listagem pública', async () => {
+    const author = await makeUser()
+    const viewer = await makeUser()
+    const event = await makeEvent(author.id, { isPublic: true })
+
+    await app.inject({ method: 'GET', url: '/events' })
+
+    const beforeKeys = await redis.keys('v1:events:public:*')
+    expect(beforeKeys.length).toBeGreaterThan(0)
+
+    const reactRes = await app.inject({
+      method: 'POST',
+      url: `/events/${event.id}/reactions`,
+      headers: { authorization: `Bearer ${token(app, viewer.id)}` },
+    })
+    expect(reactRes.statusCode).toBe(201)
+
+    const afterKeys = await redis.keys('v1:events:public:*')
+    expect(afterKeys).toEqual(beforeKeys)
+  })
+
+  it('confirmar presença não invalida o cache da listagem pública', async () => {
+    const author = await makeUser()
+    const viewer = await makeUser()
+    const event = await makeEvent(author.id, { isPublic: true })
+
+    await app.inject({ method: 'GET', url: '/events' })
+
+    const beforeKeys = await redis.keys('v1:events:public:*')
+    expect(beforeKeys.length).toBeGreaterThan(0)
+
+    const attRes = await app.inject({
+      method: 'POST',
+      url: `/events/${event.id}/attendances`,
+      headers: { authorization: `Bearer ${token(app, viewer.id)}` },
+      body: { type: 'CONFIRMED' },
+    })
+    expect(attRes.statusCode).toBe(201)
+
+    const afterKeys = await redis.keys('v1:events:public:*')
+    expect(afterKeys).toEqual(beforeKeys)
+  })
+
+  it('viewer state diferencia per-user (cache key inclui viewerId pra privacidade no SQL)', async () => {
+    const author = await makeUser()
+    const viewerA = await makeUser()
+    const viewerB = await makeUser()
+    const event = await makeEvent(author.id, { isPublic: true })
+
+    await testPrisma.reaction.create({
+      data: { userId: viewerA.id, eventId: event.id },
+    })
+
+    const resA = await app.inject({
+      method: 'GET',
+      url: '/events',
+      headers: { authorization: `Bearer ${token(app, viewerA.id)}` },
+    })
+    expect(resA.statusCode).toBe(200)
+    const eventA = resA
+      .json()
+      .data.find((e: { id: string }) => e.id === event.id)
+    expect(eventA.userLiked).toBe(true)
+
+    const resB = await app.inject({
+      method: 'GET',
+      url: '/events',
+      headers: { authorization: `Bearer ${token(app, viewerB.id)}` },
+    })
+    expect(resB.statusCode).toBe(200)
+    const eventB = resB
+      .json()
+      .data.find((e: { id: string }) => e.id === event.id)
+    expect(eventB.userLiked).toBe(false)
+
+    // findPublicEvents agora aplica authorVisibleWhere(viewerId) no SQL pra
+    // não vazar eventos de autores privados — então cada viewer tem sua
+    // própria entrada no cache. Trade-off conhecido vs cache cross-viewer.
+    const keys = await redis.keys('v1:events:public:*')
+    expect(keys).toHaveLength(2)
+  })
+
+  it('criar evento invalida o cache (lista muda)', async () => {
+    const author = await makeUser()
+    await makeEvent(author.id, { isPublic: true })
+
+    await app.inject({ method: 'GET', url: '/events' })
+    expect((await redis.keys('v1:events:public:*')).length).toBeGreaterThan(0)
+
+    await app.inject({
+      method: 'POST',
+      url: '/events',
+      headers: { authorization: `Bearer ${token(app, author.id)}` },
+      body: {
+        title: 'Novo evento',
+        description: 'Descrição do evento',
+        date: new Date(Date.now() + 86400000).toISOString(),
+        latitude: -25.4,
+        longitude: -49.3,
+        category: 'Festa',
+        isPublic: true,
+      },
+    })
+
+    expect(await redis.keys('v1:events:public:*')).toHaveLength(0)
   })
 })
 

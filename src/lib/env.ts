@@ -9,8 +9,26 @@ const baseSchema = z.object({
     .enum(['development', 'test', 'production'])
     .default('development'),
   PUBLIC_URL: z.url().default('http://localhost:3333'),
+  REDIS_URL: z
+    .string()
+    .regex(/^rediss?:\/\//, 'REDIS_URL deve começar com redis:// ou rediss://')
+    .optional(),
   STORAGE_DRIVER: z.enum(['cloudinary', 'local']).optional(),
   UPLOADS_DIR: z.string().optional(),
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  FACEBOOK_APP_ID: z.string().optional(),
+  FACEBOOK_APP_SECRET: z.string().optional(),
+  FEATURED_RECONCILE_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(300000),
+  // z.coerce.boolean() usa Boolean() do JS — "false"/"0" virariam true.
+  // Aceita explicitamente as strings comuns e transforma manualmente.
+  FEATURED_RECONCILE_ENABLED: z
+    .enum(['true', 'false', '1', '0'])
+    .default('true')
+    .transform((v) => v === 'true' || v === '1'),
 })
 
 const cloudinarySchema = z.object({
@@ -61,8 +79,14 @@ export const env = {
   PORT: parsed.PORT,
   NODE_ENV: parsed.NODE_ENV,
   PUBLIC_URL: parsed.PUBLIC_URL,
+  REDIS_URL: parsed.REDIS_URL,
   STORAGE_DRIVER,
   UPLOADS_DIR: path.resolve(
     parsed.UPLOADS_DIR ?? path.join(process.cwd(), 'uploads'),
   ),
+  GOOGLE_CLIENT_ID: parsed.GOOGLE_CLIENT_ID,
+  FACEBOOK_APP_ID: parsed.FACEBOOK_APP_ID,
+  FACEBOOK_APP_SECRET: parsed.FACEBOOK_APP_SECRET,
+  FEATURED_RECONCILE_INTERVAL_MS: parsed.FEATURED_RECONCILE_INTERVAL_MS,
+  FEATURED_RECONCILE_ENABLED: parsed.FEATURED_RECONCILE_ENABLED,
 } as const

@@ -1,3 +1,4 @@
+import { cache } from '../../lib/cache'
 import { ensureEventAccess } from '../event-invites/event-invites.access'
 import { findPostById } from '../posts/posts.repository'
 import {
@@ -37,8 +38,12 @@ export async function addCommentToEvent(
   eventId: string,
   body: CreateCommentBody,
 ) {
-  await ensureEventAccess(eventId, authorId)
-  return createComment(authorId, body.content, { eventId })
+  const event = await ensureEventAccess(eventId, authorId)
+  const comment = await createComment(authorId, body.content, { eventId })
+  if (event.isPublic) {
+    await cache.invalidate('events:public:*')
+  }
+  return comment
 }
 
 export async function addCommentToPost(
@@ -85,14 +90,13 @@ export async function listPostComments(
 export async function removeComment(
   commentId: string,
   requesterId: string,
-  scopeId: string, // eventId ou postId dependendo de onde o comentário está
+  scopeId: string,
 ) {
   const comment = await findCommentById(commentId)
   if (!comment) {
     throw { statusCode: 404, message: 'Comentário não encontrado' }
   }
 
-  // Valida que o comentário pertence ao escopo da rota
   const belongsToScope =
     comment.eventId === scopeId || comment.postId === scopeId
   if (!belongsToScope) {
@@ -100,7 +104,7 @@ export async function removeComment(
   }
 
   const eventId = await resolveCommentEventId(comment)
-  await ensureEventAccess(eventId, requesterId)
+  const event = await ensureEventAccess(eventId, requesterId)
 
   if (comment.authorId !== requesterId) {
     throw {
@@ -108,5 +112,10 @@ export async function removeComment(
       message: 'Sem permissão para deletar este comentário',
     }
   }
-  return deleteComment(commentId)
+
+  const result = await deleteComment(commentId)
+  if (comment.eventId && event.isPublic) {
+    await cache.invalidate('events:public:*')
+  }
+  return result
 }

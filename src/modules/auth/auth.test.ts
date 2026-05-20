@@ -51,6 +51,40 @@ describe('POST /auth/login', () => {
 
     expect(res.statusCode).toBe(401)
   })
+
+  it('retorna 401 quando o usuário só tem conta social (password=null)', async () => {
+    const user = await makeUser({ password: null })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      body: { email: user.email, password: 'senha123' },
+    })
+
+    expect(res.statusCode).toBe(401)
+  })
+})
+
+describe('rate limit em POST /auth/login', () => {
+  it('retorna 429 após 10 tentativas no mesmo minuto', async () => {
+    const body = { email: 'naoexiste@test.com', password: 'qualquer' }
+
+    for (let i = 0; i < 10; i++) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/auth/login',
+        body,
+      })
+      expect(res.statusCode).toBe(401)
+    }
+
+    const blocked = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      body,
+    })
+    expect(blocked.statusCode).toBe(429)
+  })
 })
 
 describe('GET /auth/me (removido)', () => {

@@ -1,4 +1,5 @@
-import { afterEach, beforeAll } from 'vitest'
+import { afterAll, afterEach, beforeAll } from 'vitest'
+import { redis } from '../lib/redis'
 import { setStorage } from '../lib/storage'
 import { fakeStorage } from './fake-storage'
 import { testPrisma } from './prisma'
@@ -15,6 +16,20 @@ if (!dbUrl.includes('test')) {
   )
 }
 
+const redisUrl = process.env.REDIS_URL ?? ''
+
+if (!redisUrl) {
+  throw new Error(
+    'PERIGO: REDIS_URL não está definido. Os testes dependem de Redis ativo no database /15.',
+  )
+}
+
+if (!redisUrl.endsWith('/15')) {
+  throw new Error(
+    `PERIGO: REDIS_URL não aponta para o database de teste (/15).\nValor atual: "${redisUrl}"`,
+  )
+}
+
 afterEach(async () => {
   await testPrisma.$transaction([
     testPrisma.reaction.deleteMany(),
@@ -22,9 +37,16 @@ afterEach(async () => {
     testPrisma.post.deleteMany(),
     testPrisma.eventInvite.deleteMany(),
     testPrisma.eventAttendance.deleteMany(),
+    testPrisma.featuredEvent.deleteMany(),
     testPrisma.event.deleteMany(),
     testPrisma.follow.deleteMany(),
+    testPrisma.socialAccount.deleteMany(),
     testPrisma.user.deleteMany(),
   ])
   fakeStorage.reset()
+  if (redis) await redis.flushdb()
+})
+
+afterAll(async () => {
+  if (redis) await redis.quit()
 })
