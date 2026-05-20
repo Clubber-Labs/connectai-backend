@@ -3,7 +3,6 @@ import {
   AttendanceType,
   FollowStatus,
   PrismaClient,
-  ReactionType,
 } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 
@@ -32,7 +31,6 @@ const CATEGORIES = [
   'Balada',
 ]
 
-const REACTION_TYPES = Object.values(ReactionType)
 const ATTENDANCE_TYPES = [AttendanceType.CONFIRMED, AttendanceType.INTERESTED]
 
 // ─── seed ─────────────────────────────────────────────────────────────────────
@@ -285,7 +283,6 @@ async function main() {
   const eventReactions: Array<{
     userId: string
     eventId: string
-    type: ReactionType
   }> = []
   const eventReactionPairs = new Set<string>()
 
@@ -298,7 +295,6 @@ async function main() {
         eventReactions.push({
           userId: user.id,
           eventId: event.id,
-          type: pick(REACTION_TYPES),
         })
       }
     }
@@ -366,7 +362,6 @@ async function main() {
     const postReactions: Array<{
       userId: string
       postId: string
-      type: ReactionType
     }> = []
     const postReactionPairs = new Set<string>()
     const postComments: Array<{
@@ -384,7 +379,6 @@ async function main() {
           postReactions.push({
             userId: user.id,
             postId: post.id,
-            type: pick(REACTION_TYPES),
           })
         }
       }
