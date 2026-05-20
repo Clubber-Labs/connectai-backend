@@ -2,6 +2,7 @@ import type { Prisma } from '@prisma/client'
 import { buildLifecycleWhere } from '../../lib/event-filters'
 import { computeEventStatus, type EventStatus } from '../../lib/event-lifecycle'
 import { prisma } from '../../lib/prisma'
+import { authorVisibleWhere } from '../../lib/profile-visibility'
 import {
   type Bbox,
   findEventIdsByDistance,
@@ -124,6 +125,7 @@ export async function findPublicEvents(
   >,
   limit: number,
   cursor?: string,
+  viewerId?: string,
   now: Date = new Date(),
 ): Promise<SharedEvent[]> {
   const KNN_OVERFETCH = 20
@@ -140,6 +142,7 @@ export async function findPublicEvents(
       { latitude: filters.nearLat, longitude: filters.nearLng },
       Math.min(limit * KNN_OVERFETCH, KNN_OVERFETCH_CAP),
       filters.radiusKm,
+      viewerId,
     )
     if (spatialIdFilter.length === 0) return []
   } else if (
@@ -150,30 +153,36 @@ export async function findPublicEvents(
     spatialIdFilter = await findEventIdsWithinRadius(
       { latitude: filters.nearLat, longitude: filters.nearLng },
       filters.radiusKm,
+      viewerId,
     )
     if (spatialIdFilter.length === 0) return []
   }
 
   const events = (await prisma.event.findMany({
     where: {
-      isPublic: true,
-      ...buildLifecycleWhere({
-        includePast: filters.includePast ?? false,
-        status: filters.status,
-        now,
-      }),
-      ...(spatialIdFilter && { id: { in: spatialIdFilter } }),
-      ...(filters.category && filters.category.length > 0
-        ? { category: { in: filters.category } }
-        : {}),
-      ...(filters.dateFrom || filters.dateTo
-        ? {
-            date: {
-              ...(filters.dateFrom && { gte: new Date(filters.dateFrom) }),
-              ...(filters.dateTo && { lte: new Date(filters.dateTo) }),
-            },
-          }
-        : {}),
+      AND: [
+        { isPublic: true },
+        authorVisibleWhere(viewerId),
+        buildLifecycleWhere({
+          includePast: filters.includePast ?? false,
+          status: filters.status,
+          now,
+        }),
+        ...(spatialIdFilter ? [{ id: { in: spatialIdFilter } }] : []),
+        ...(filters.category && filters.category.length > 0
+          ? [{ category: { in: filters.category } }]
+          : []),
+        ...(filters.dateFrom || filters.dateTo
+          ? [
+              {
+                date: {
+                  ...(filters.dateFrom && { gte: new Date(filters.dateFrom) }),
+                  ...(filters.dateTo && { lte: new Date(filters.dateTo) }),
+                },
+              },
+            ]
+          : []),
+      ],
     },
     take: filters.orderBy === 'distance' ? undefined : limit,
     ...(cursor &&
@@ -201,8 +210,11 @@ export async function findEventsByAuthor(
   now: Date = new Date(),
 ): Promise<SharedEvent[]> {
   const where: Prisma.EventWhereInput = {
-    authorId,
-    ...(viewerId !== authorId && { isPublic: true }),
+    AND: [
+      { authorId },
+      authorVisibleWhere(viewerId),
+      ...(viewerId !== authorId ? [{ isPublic: true }] : []),
+    ],
   }
   const events = (await prisma.event.findMany({
     where,
@@ -349,6 +361,7 @@ const MAP_RESPONSE_CAP = 500
  */
 export async function findEventsForMap(
   query: MapEventsQuery,
+  viewerId?: string,
   now: Date = new Date(),
 ): Promise<MapEventPoint[]> {
   const bbox: Bbox = {
@@ -358,29 +371,34 @@ export async function findEventsForMap(
     west: query.bboxWest,
   }
 
-  const idsInBbox = await findEventIdsInBbox(bbox, MAP_BBOX_FETCH_CAP)
+  const idsInBbox = await findEventIdsInBbox(bbox, MAP_BBOX_FETCH_CAP, viewerId)
   if (idsInBbox.length === 0) return []
 
   const events = await prisma.event.findMany({
     where: {
-      id: { in: idsInBbox },
-      isPublic: true,
-      ...buildLifecycleWhere({
-        includePast: false,
-        status: query.status,
-        now,
-      }),
-      ...(query.category && query.category.length > 0
-        ? { category: { in: query.category } }
-        : {}),
-      ...(query.dateFrom || query.dateTo
-        ? {
-            date: {
-              ...(query.dateFrom && { gte: new Date(query.dateFrom) }),
-              ...(query.dateTo && { lte: new Date(query.dateTo) }),
-            },
-          }
-        : {}),
+      AND: [
+        { id: { in: idsInBbox } },
+        { isPublic: true },
+        authorVisibleWhere(viewerId),
+        buildLifecycleWhere({
+          includePast: false,
+          status: query.status,
+          now,
+        }),
+        ...(query.category && query.category.length > 0
+          ? [{ category: { in: query.category } }]
+          : []),
+        ...(query.dateFrom || query.dateTo
+          ? [
+              {
+                date: {
+                  ...(query.dateFrom && { gte: new Date(query.dateFrom) }),
+                  ...(query.dateTo && { lte: new Date(query.dateTo) }),
+                },
+              },
+            ]
+          : []),
+      ],
     },
     select: {
       id: true,

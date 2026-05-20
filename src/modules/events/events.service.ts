@@ -45,14 +45,24 @@ type NormalizedListResult = {
  */
 export async function listEvents(query: ListEventsQuery, viewerId?: string) {
   if (query.orderBy === 'distance') {
-    const events = await findPublicEvents(query, query.limit, query.cursor)
+    const events = await findPublicEvents(
+      query,
+      query.limit,
+      query.cursor,
+      viewerId,
+    )
     const nextCursor = null // ordenação por distância não usa cursor pagination
     const shared = { data: events, nextCursor }
     return mergeViewerState(shared, viewerId)
   }
 
+  // viewerId entra na chave de cache porque findPublicEvents agora filtra
+  // por visibilidade do autor no SQL (authorVisibleWhere) — eventos de
+  // perfis privados só aparecem pra followers. Sem viewerId na chave o
+  // cache vazaria eventos privados entre usuários diferentes.
   const cacheKey = cache.key(
     'events:public',
+    viewerId ?? 'anon',
     query.category ? [...query.category].sort().join(',') : '',
     query.status ? [...query.status].sort().join(',') : '',
     query.includePast ? '1' : '0',
@@ -64,7 +74,12 @@ export async function listEvents(query: ListEventsQuery, viewerId?: string) {
 
   let shared = await cache.get<SharedListResult>(cacheKey)
   if (!shared) {
-    const events = await findPublicEvents(query, query.limit, query.cursor)
+    const events = await findPublicEvents(
+      query,
+      query.limit,
+      query.cursor,
+      viewerId,
+    )
     const nextCursor =
       events.length === query.limit ? events[events.length - 1].id : null
     shared = { data: events, nextCursor }
@@ -126,8 +141,11 @@ function hydrateWithState(
   }
 }
 
-export async function listEventsForMap(query: MapEventsQuery) {
-  return findEventsForMap(query)
+export async function listEventsForMap(
+  query: MapEventsQuery,
+  viewerId?: string,
+) {
+  return findEventsForMap(query, viewerId)
 }
 
 export async function listUserEvents(

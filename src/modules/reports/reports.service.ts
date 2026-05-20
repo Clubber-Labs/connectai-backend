@@ -1,3 +1,4 @@
+import { resolveCommentEventId } from '../comments/comments.service'
 import { ensureEventAccess } from '../event-invites/event-invites.access'
 import {
   createCommentReport,
@@ -5,7 +6,6 @@ import {
   createUserReport,
   deleteReportById,
   findCommentById,
-  findEventById,
   findExistingCommentReport,
   findExistingEventReport,
   findExistingUserReport,
@@ -36,12 +36,10 @@ export async function reportEvent(
   reporterId: string,
   eventId: string,
 ) {
-  const event = await findEventById(eventId)
-  if (!event) {
-    throw { statusCode: 404, message: 'Evento não encontrado' }
-  }
-
-  await ensureEventAccess(eventId, reporterId)
+  // ensureEventAccess já carrega o evento (findEventAccess), valida o acesso
+  // via invite/autor/público e retorna { authorId } — uma query só, autoridade
+  // única sobre acesso a evento.
+  const event = await ensureEventAccess(eventId, reporterId)
 
   if (event.authorId === reporterId) {
     throw {
@@ -71,11 +69,8 @@ export async function reportComment(
     throw { statusCode: 404, message: 'Comentário não encontrado' }
   }
 
-  const eventId = comment.eventId ?? comment.post?.eventId
-  if (!eventId) {
-    throw { statusCode: 404, message: 'Evento não encontrado' }
-  }
-  await ensureEventAccess(eventId, reporterId)
+  const parentEventId = await resolveCommentEventId(comment)
+  await ensureEventAccess(parentEventId, reporterId)
 
   if (comment.authorId === reporterId) {
     throw {

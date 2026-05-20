@@ -5,6 +5,7 @@ import { buildApp } from '../../test/app'
 import {
   makeAttendance,
   makeEvent,
+  makeFollow,
   makeInvite,
   makeUser,
 } from '../../test/factories'
@@ -309,6 +310,54 @@ describe('GET /events', () => {
       userAttendance: null,
     })
   })
+
+  it('NÃO retorna evento de autor privado para viewer não-follower', async () => {
+    const privateAuthor = await makeUser({ isPrivate: true })
+    const stranger = await makeUser()
+    const event = await makeEvent(privateAuthor.id, { isPublic: true })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/events',
+      headers: { authorization: `Bearer ${token(app, stranger.id)}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const found = res.json().data.find((e: { id: string }) => e.id === event.id)
+    expect(found).toBeUndefined()
+  })
+
+  it('retorna evento de autor privado para follower aceito', async () => {
+    const privateAuthor = await makeUser({ isPrivate: true })
+    const follower = await makeUser()
+    await makeFollow(follower.id, privateAuthor.id, 'ACCEPTED')
+    const event = await makeEvent(privateAuthor.id, { isPublic: true })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/events',
+      headers: { authorization: `Bearer ${token(app, follower.id)}` },
+    })
+
+    const found = res.json().data.find((e: { id: string }) => e.id === event.id)
+    expect(found).toBeDefined()
+  })
+
+  it('NÃO retorna evento de autor privado quando follow é PENDING', async () => {
+    const privateAuthor = await makeUser({ isPrivate: true })
+    const requester = await makeUser()
+    await makeFollow(requester.id, privateAuthor.id, 'PENDING')
+    const event = await makeEvent(privateAuthor.id, { isPublic: true })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/events',
+      headers: { authorization: `Bearer ${token(app, requester.id)}` },
+    })
+
+    const found = res.json().data.find((e: { id: string }) => e.id === event.id)
+    expect(found).toBeUndefined()
+  })
 })
 
 describe('cache de GET /events', () => {
@@ -355,7 +404,7 @@ describe('cache de GET /events', () => {
     expect(afterKeys).toEqual(beforeKeys)
   })
 
-  it('viewer state vem de overlay (uma única chave compartilhada para múltiplos viewers)', async () => {
+  it('viewer state diferencia per-user (cache key inclui viewerId pra privacidade no SQL)', async () => {
     const author = await makeUser()
     const viewerA = await makeUser()
     const viewerB = await makeUser()
@@ -387,8 +436,11 @@ describe('cache de GET /events', () => {
       .data.find((e: { id: string }) => e.id === event.id)
     expect(eventB.userLiked).toBe(false)
 
+    // findPublicEvents agora aplica authorVisibleWhere(viewerId) no SQL pra
+    // não vazar eventos de autores privados — então cada viewer tem sua
+    // própria entrada no cache. Trade-off conhecido vs cache cross-viewer.
     const keys = await redis.keys('v1:events:public:*')
-    expect(keys).toHaveLength(1)
+    expect(keys).toHaveLength(2)
   })
 
   it('criar evento invalida o cache (lista muda)', async () => {
@@ -553,6 +605,46 @@ describe('GET /events/map', () => {
 
     expect(res.statusCode).toBe(400)
   })
+
+  it('NÃO retorna ponto de autor privado para viewer não-follower', async () => {
+    const privateAuthor = await makeUser({ isPrivate: true })
+    const stranger = await makeUser()
+    await makeEvent(privateAuthor.id, {
+      latitude: -25.4,
+      longitude: -49.3,
+      isPublic: true,
+    })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/events/map?bboxNorth=-25.3&bboxSouth=-25.5&bboxEast=-49.2&bboxWest=-49.4',
+      headers: { authorization: `Bearer ${token(app, stranger.id)}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual([])
+  })
+
+  it('retorna ponto de autor privado para follower aceito', async () => {
+    const privateAuthor = await makeUser({ isPrivate: true })
+    const follower = await makeUser()
+    await makeFollow(follower.id, privateAuthor.id, 'ACCEPTED')
+    const event = await makeEvent(privateAuthor.id, {
+      latitude: -25.4,
+      longitude: -49.3,
+      isPublic: true,
+    })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/events/map?bboxNorth=-25.3&bboxSouth=-25.5&bboxEast=-49.2&bboxWest=-49.4',
+      headers: { authorization: `Bearer ${token(app, follower.id)}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().length).toBe(1)
+    expect(res.json()[0].id).toBe(event.id)
+  })
 })
 
 describe('GET /events/:id', () => {
@@ -575,6 +667,144 @@ describe('GET /events/:id', () => {
     expect(res.statusCode).toBe(401)
   })
 
+  it('retorna 403 ao acessar evento público de autor privado sem seguir', async () => {
+    const privateAuthor = await makeUser({ isPrivate: true })
+    const stranger = await makeUser()
+    const event = await makeEvent(privateAuthor.id, { isPublic: true })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/events/${event.id}`,
+      headers: { authorization: `Bearer ${token(app, stranger.id)}` },
+    })
+
+    expect(res.statusCode).toBe(403)
+  })
+
+  it('retorna evento de autor privado para follower aceito', async () => {
+    const privateAuthor = await makeUser({ isPrivate: true })
+    const follower = await makeUser()
+    await makeFollow(follower.id, privateAuthor.id, 'ACCEPTED')
+    const event = await makeEvent(privateAuthor.id, { isPublic: true })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/events/${event.id}`,
+      headers: { authorization: `Bearer ${token(app, follower.id)}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+  })
+
+  it('autor sempre vê o próprio evento mesmo sendo privado', async () => {
+    const privateAuthor = await makeUser({ isPrivate: true })
+    const event = await makeEvent(privateAuthor.id, { isPublic: true })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/events/${event.id}`,
+      headers: { authorization: `Bearer ${token(app, privateAuthor.id)}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+  })
+})
+
+describe('GET /users/:id/events — privacy gate', () => {
+  it('viewer não-follower NÃO vê eventos de autor privado', async () => {
+    const privateAuthor = await makeUser({ isPrivate: true })
+    const stranger = await makeUser()
+    await makeEvent(privateAuthor.id, { isPublic: true })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/users/${privateAuthor.id}/events`,
+      headers: { authorization: `Bearer ${token(app, stranger.id)}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().data).toEqual([])
+  })
+
+  it('follower aceito vê eventos de autor privado', async () => {
+    const privateAuthor = await makeUser({ isPrivate: true })
+    const follower = await makeUser()
+    await makeFollow(follower.id, privateAuthor.id, 'ACCEPTED')
+    await makeEvent(privateAuthor.id, { isPublic: true })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/users/${privateAuthor.id}/events`,
+      headers: { authorization: `Bearer ${token(app, follower.id)}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().data.length).toBe(1)
+  })
+
+  it('convite NÃO bypassa privacidade do autor em evento público', async () => {
+    const privateAuthor = await makeUser({ isPrivate: true })
+    const invitee = await makeUser()
+    const event = await makeEvent(privateAuthor.id, { isPublic: true })
+    await makeInvite(event.id, privateAuthor.id, invitee.id)
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/events/${event.id}`,
+      headers: { authorization: `Bearer ${token(app, invitee.id)}` },
+    })
+
+    expect(res.statusCode).toBe(403)
+  })
+
+  it('convite em evento privado de autor privado SEM follow ACCEPTED → 403', async () => {
+    const privateAuthor = await makeUser({ isPrivate: true })
+    const invitee = await makeUser()
+    const event = await makeEvent(privateAuthor.id, { isPublic: false })
+    await makeInvite(event.id, privateAuthor.id, invitee.id)
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/events/${event.id}`,
+      headers: { authorization: `Bearer ${token(app, invitee.id)}` },
+    })
+
+    expect(res.statusCode).toBe(403)
+  })
+
+  it('convite em evento privado de autor privado COM follow ACCEPTED → 200', async () => {
+    const privateAuthor = await makeUser({ isPrivate: true })
+    const invitee = await makeUser()
+    await makeFollow(invitee.id, privateAuthor.id, 'ACCEPTED')
+    const event = await makeEvent(privateAuthor.id, { isPublic: false })
+    await makeInvite(event.id, privateAuthor.id, invitee.id)
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/events/${event.id}`,
+      headers: { authorization: `Bearer ${token(app, invitee.id)}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+  })
+
+  it('convite em evento privado de autor PÚBLICO → 200', async () => {
+    const publicAuthor = await makeUser({ isPrivate: false })
+    const invitee = await makeUser()
+    const event = await makeEvent(publicAuthor.id, { isPublic: false })
+    await makeInvite(event.id, publicAuthor.id, invitee.id)
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/events/${event.id}`,
+      headers: { authorization: `Bearer ${token(app, invitee.id)}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+  })
+})
+
+describe('GET /events/:id — acesso por convite e visibilidade', () => {
   it('retorna evento privado para o autor', async () => {
     const user = await makeUser()
     const event = await makeEvent(user.id, { isPublic: false })
