@@ -8,7 +8,15 @@ function uid() {
 }
 
 export async function makeUser(
-  overrides: { isPrivate?: boolean; username?: string } = {},
+  overrides: {
+    isPrivate?: boolean
+    username?: string
+    email?: string
+    password?: string | null
+    phone?: string | null
+    birthdate?: Date | null
+    isPremium?: boolean
+  } = {},
 ) {
   const id = uid()
   return testPrisma.user.create({
@@ -16,12 +24,39 @@ export async function makeUser(
       name: `User${id}`,
       lastname: `Last${id}`,
       username: overrides.username ?? `user_${id}`,
-      email: `user_${id}@test.com`,
-      password: bcrypt.hashSync('senha123', 1),
-      phone: `119${id.slice(-8).padStart(8, '0')}`,
-      birthdate: new Date('2000-01-01'),
+      email: overrides.email ?? `user_${id}@test.com`,
+      password:
+        overrides.password === null
+          ? null
+          : (overrides.password ?? bcrypt.hashSync('senha123', 1)),
+      phone:
+        overrides.phone === null
+          ? null
+          : (overrides.phone ?? `119${id.slice(-8).padStart(8, '0')}`),
+      birthdate:
+        overrides.birthdate === null
+          ? null
+          : (overrides.birthdate ?? new Date('2000-01-01')),
       isPrivate: overrides.isPrivate ?? false,
       role: 'USER',
+      isPremium: overrides.isPremium ?? false,
+    },
+  })
+}
+
+export async function makeSocialAccount(
+  userId: string,
+  provider: 'GOOGLE' | 'FACEBOOK' = 'GOOGLE',
+  overrides: { providerUserId?: string; email?: string | null } = {},
+) {
+  const id = uid()
+  return testPrisma.socialAccount.create({
+    data: {
+      userId,
+      provider,
+      providerUserId:
+        overrides.providerUserId ?? `${provider.toLowerCase()}_${id}`,
+      email: overrides.email === undefined ? null : overrides.email,
     },
   })
 }
@@ -36,6 +71,7 @@ export async function makeEvent(
     canceledAt?: Date | null
     latitude?: number
     longitude?: number
+    isFeatured?: boolean
   } = {},
 ) {
   const id = uid()
@@ -49,6 +85,7 @@ export async function makeEvent(
       longitude: overrides.longitude ?? -49.3,
       category: overrides.category ?? 'Festa',
       isPublic: overrides.isPublic ?? true,
+      isFeatured: overrides.isFeatured ?? false,
       canceledAt: overrides.canceledAt ?? null,
       authorId,
     },
@@ -90,7 +127,12 @@ export async function makeReport(
   overrides: {
     eventId?: string
     commentId?: string
-    reason?: 'HATE_SPEECH' | 'SPAM_OR_FRAUD' | 'HARASSMENT' | 'INAPPROPRIATE_CONTENT' | 'OTHER'
+    reason?:
+      | 'HATE_SPEECH'
+      | 'SPAM_OR_FRAUD'
+      | 'HARASSMENT'
+      | 'INAPPROPRIATE_CONTENT'
+      | 'OTHER'
     status?: 'PENDING' | 'REVIEWED' | 'RESOLVED_INVALID' | 'RESOLVED_REMOVED'
   } = {},
 ) {
@@ -105,13 +147,21 @@ export async function makeReport(
   })
 }
 
-export async function makeReaction(
-  userId: string,
-  eventId: string,
-  type: 'LIKE' | 'LOVE' | 'HAHA' | 'WOW' | 'SAD' | 'ANGRY' = 'LIKE',
-) {
+export async function makeReaction(userId: string, eventId: string) {
   return testPrisma.reaction.create({
-    data: { userId, eventId, type },
+    data: { userId, eventId },
+  })
+}
+
+export async function makePostReaction(userId: string, postId: string) {
+  return testPrisma.reaction.create({
+    data: { userId, postId },
+  })
+}
+
+export async function makeCommentReaction(userId: string, commentId: string) {
+  return testPrisma.commentReaction.create({
+    data: { userId, commentId },
   })
 }
 
@@ -140,5 +190,26 @@ export async function makeAdmin(
       birthdate: new Date('2000-01-01'),
       role: 'ADMIN',
     }
+  })
+}
+
+export async function makeFeaturedEvent(
+  eventId: string,
+  createdBy: string,
+  overrides: {
+    startsAt?: Date
+    endsAt?: Date
+    canceledAt?: Date | null
+  } = {},
+) {
+  const now = new Date()
+  return testPrisma.featuredEvent.create({
+    data: {
+      eventId,
+      createdBy,
+      startsAt: overrides.startsAt ?? now,
+      endsAt: overrides.endsAt ?? new Date(now.getTime() + 3600_000),
+      canceledAt: overrides.canceledAt ?? null,
+    },
   })
 }

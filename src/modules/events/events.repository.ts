@@ -1,9 +1,6 @@
 import type { Prisma } from '@prisma/client'
 import { buildLifecycleWhere } from '../../lib/event-filters'
-import {
-  computeEventStatus,
-  type EventStatus,
-} from '../../lib/event-lifecycle'
+import { computeEventStatus, type EventStatus } from '../../lib/event-lifecycle'
 import { prisma } from '../../lib/prisma'
 import {
   type Bbox,
@@ -11,6 +8,10 @@ import {
   findEventIdsInBbox,
   findEventIdsWithinRadius,
 } from '../../lib/spatial'
+import {
+  buildCommentInclude,
+  commentAuthorSelect,
+} from '../comments/comments.repository'
 import type {
   CreateEventBody,
   ListEventsQuery,
@@ -18,13 +19,7 @@ import type {
   UpdateEventBody,
 } from './events.schema'
 
-const authorSelect = {
-  id: true,
-  name: true,
-  lastname: true,
-  username: true,
-  avatarUrl: true,
-} as const
+const authorSelect = commentAuthorSelect
 
 const eventImageSelect = {
   id: true,
@@ -34,7 +29,14 @@ const eventImageSelect = {
   order: true,
 } as const
 
-function buildEventIncludes(viewerId?: string): Prisma.EventInclude {
+/**
+ * Includes "shared" — sem nada dependente do viewer.
+ * O resultado é cacheável em Redis (key sem viewerId) e compartilhado
+ * entre todos os viewers que peçam a mesma lista. O viewer state
+ * (userLiked, userAttendance, recentComments[i].userLiked) é hidratado
+ * em uma camada acima via findViewerStatesForEvents.
+ */
+function buildSharedIncludes(): Prisma.EventInclude {
   return {
     author: { select: authorSelect },
     _count: {
@@ -43,64 +45,57 @@ function buildEventIncludes(viewerId?: string): Prisma.EventInclude {
     comments: {
       orderBy: { createdAt: 'desc' },
       take: 2,
-      include: { author: { select: authorSelect } },
+      include: buildCommentInclude(),
     },
     images: {
       orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
       select: eventImageSelect,
     },
-    ...(viewerId && {
-      reactions: {
-        where: { userId: viewerId },
-        select: { type: true },
-        take: 1,
-      },
-      attendances: {
-        where: { userId: viewerId },
-        select: { type: true },
-        take: 1,
-      },
-    }),
   }
 }
 
-type PrismaEvent = Prisma.EventGetPayload<{
+type PrismaSharedEvent = Prisma.EventGetPayload<{
   include: {
     author: { select: typeof authorSelect }
     _count: { select: { attendances: true; reactions: true; comments: true } }
     comments: {
-      include: { author: { select: typeof authorSelect } }
+      include: {
+        author: { select: typeof authorSelect }
+        _count: { select: { reactions: true } }
+      }
     }
     images: { select: typeof eventImageSelect }
-    reactions: { select: { type: true } }
-    attendances: { select: { type: true } }
   }
 }>
 
 type AuthorPayload = Prisma.UserGetPayload<{ select: typeof authorSelect }>
 
-export type NormalizedEvent = Omit<
-  PrismaEvent,
-  'reactions' | 'attendances' | 'comments'
-> & {
-  recentComments: {
-    id: string
-    content: string
-    createdAt: Date
-    author: AuthorPayload
-  }[]
-  userReaction: string | null
-  userAttendance: string | null
+export type SharedComment = {
+  id: string
+  content: string
+  createdAt: Date
+  author: AuthorPayload
+  reactionsCount: number
+}
+
+export type SharedEvent = Omit<PrismaSharedEvent, 'comments'> & {
+  recentComments: SharedComment[]
   status: EventStatus
 }
 
-function normalizeEvent(
-  event: PrismaEvent,
-  viewerId?: string,
-  now: Date = new Date(),
-): NormalizedEvent {
-  const { reactions, attendances, comments, ...rest } = event
+export type NormalizedComment = SharedComment & { userLiked: boolean }
 
+export type NormalizedEvent = Omit<SharedEvent, 'recentComments'> & {
+  recentComments: NormalizedComment[]
+  userLiked: boolean
+  userAttendance: string | null
+}
+
+function normalizeShared(
+  event: PrismaSharedEvent,
+  now: Date = new Date(),
+): SharedEvent {
+  const { comments, ...rest } = event
   return {
     ...rest,
     recentComments: (comments ?? []).map((c) => ({
@@ -108,10 +103,8 @@ function normalizeEvent(
       content: c.content,
       createdAt: c.createdAt,
       author: c.author,
+      reactionsCount: c._count.reactions,
     })),
-    userReaction: viewerId && reactions?.length ? reactions[0].type : null,
-    userAttendance:
-      viewerId && attendances?.length ? attendances[0].type : null,
     status: computeEventStatus(event, now),
   }
 }
@@ -131,22 +124,29 @@ export async function findPublicEvents(
   >,
   limit: number,
   cursor?: string,
-  viewerId?: string,
   now: Date = new Date(),
-) {
+): Promise<SharedEvent[]> {
   const KNN_OVERFETCH = 20
   const KNN_OVERFETCH_CAP = 1000
 
   let spatialIdFilter: string[] | undefined
 
-  if (filters.orderBy === 'distance' && filters.nearLat !== undefined && filters.nearLng !== undefined) {
+  if (
+    filters.orderBy === 'distance' &&
+    filters.nearLat !== undefined &&
+    filters.nearLng !== undefined
+  ) {
     spatialIdFilter = await findEventIdsByDistance(
       { latitude: filters.nearLat, longitude: filters.nearLng },
       Math.min(limit * KNN_OVERFETCH, KNN_OVERFETCH_CAP),
       filters.radiusKm,
     )
     if (spatialIdFilter.length === 0) return []
-  } else if (filters.radiusKm !== undefined && filters.nearLat !== undefined && filters.nearLng !== undefined) {
+  } else if (
+    filters.radiusKm !== undefined &&
+    filters.nearLat !== undefined &&
+    filters.nearLng !== undefined
+  ) {
     spatialIdFilter = await findEventIdsWithinRadius(
       { latitude: filters.nearLat, longitude: filters.nearLng },
       filters.radiusKm,
@@ -177,20 +177,21 @@ export async function findPublicEvents(
         : {}),
     },
     take: filters.orderBy === 'distance' ? undefined : limit,
-    ...(cursor && filters.orderBy !== 'distance' && { skip: 1, cursor: { id: cursor } }),
-    orderBy: [{ date: 'asc' }, { id: 'asc' }],
-    include: buildEventIncludes(viewerId),
-  })) as unknown as PrismaEvent[]
+    ...(cursor &&
+      filters.orderBy !== 'distance' && { skip: 1, cursor: { id: cursor } }),
+    orderBy: [{ isFeatured: 'desc' }, { date: 'asc' }, { id: 'asc' }],
+    include: buildSharedIncludes(),
+  })) as unknown as PrismaSharedEvent[]
 
   const ordered =
     filters.orderBy === 'distance' && spatialIdFilter
       ? spatialIdFilter
           .map((id) => events.find((e) => e.id === id))
-          .filter((e): e is PrismaEvent => e !== undefined)
+          .filter((e): e is PrismaSharedEvent => e !== undefined)
           .slice(0, limit)
       : events
 
-  return ordered.map((e) => normalizeEvent(e, viewerId, now))
+  return ordered.map((e) => normalizeShared(e, now))
 }
 
 export async function findEventsByAuthor(
@@ -199,7 +200,7 @@ export async function findEventsByAuthor(
   viewerId?: string,
   cursor?: string,
   now: Date = new Date(),
-) {
+): Promise<SharedEvent[]> {
   const where: Prisma.EventWhereInput = {
     authorId,
     ...(viewerId !== authorId && { isPublic: true, author: { isBanned: false } }),
@@ -208,11 +209,11 @@ export async function findEventsByAuthor(
     where,
     take: limit,
     ...(cursor && { skip: 1, cursor: { id: cursor } }),
-    orderBy: [{ date: 'asc' }, { id: 'asc' }],
-    include: buildEventIncludes(viewerId),
-  })) as unknown as PrismaEvent[]
+    orderBy: [{ isFeatured: 'desc' }, { date: 'asc' }, { id: 'asc' }],
+    include: buildSharedIncludes(),
+  })) as unknown as PrismaSharedEvent[]
 
-  return events.map((e) => normalizeEvent(e, viewerId, now))
+  return events.map((e) => normalizeShared(e, now))
 }
 
 export async function findEventAccess(id: string) {
@@ -230,16 +231,93 @@ export async function findEventAccess(id: string) {
 
 export async function findEventById(
   id: string,
-  viewerId?: string,
   now: Date = new Date(),
-) {
+): Promise<SharedEvent | null> {
   const event = (await prisma.event.findUnique({
     where: { id },
-    include: buildEventIncludes(viewerId),
-  })) as unknown as PrismaEvent | null
+    include: buildSharedIncludes(),
+  })) as unknown as PrismaSharedEvent | null
 
   if (!event) return null
-  return normalizeEvent(event, viewerId, now)
+  return normalizeShared(event, now)
+}
+
+export type ViewerEventState = {
+  liked: boolean
+  attendance: string | null
+  commentsLiked: Set<string>
+}
+
+/**
+ * Hidratação leve do estado do viewer pra uma lista de eventos já
+ * carregada (shared). Duas queries com IN — O(n) onde n = páginas.
+ * Tipicamente <15ms mesmo com listas grandes.
+ */
+export async function findViewerStatesForEvents(
+  viewerId: string,
+  eventIds: string[],
+  commentIds: string[] = [],
+): Promise<Map<string, ViewerEventState>> {
+  const map = new Map<string, ViewerEventState>(
+    eventIds.map((id) => [
+      id,
+      { liked: false, attendance: null, commentsLiked: new Set() },
+    ]),
+  )
+
+  if (eventIds.length === 0) return map
+
+  const [reactions, attendances, commentReactions] = await Promise.all([
+    prisma.reaction.findMany({
+      where: { userId: viewerId, eventId: { in: eventIds } },
+      select: { eventId: true },
+    }),
+    prisma.eventAttendance.findMany({
+      where: { userId: viewerId, eventId: { in: eventIds } },
+      select: { eventId: true, type: true },
+    }),
+    commentIds.length > 0
+      ? prisma.commentReaction.findMany({
+          where: { userId: viewerId, commentId: { in: commentIds } },
+          select: { commentId: true },
+        })
+      : Promise.resolve([]),
+  ])
+
+  for (const r of reactions) {
+    if (r.eventId) {
+      const entry = map.get(r.eventId)
+      if (entry) entry.liked = true
+    }
+  }
+  for (const a of attendances) {
+    const entry = map.get(a.eventId)
+    if (entry) entry.attendance = a.type
+  }
+  // commentReactions são por comentário, não por evento — agrupa por eventId
+  // via lookup reverso (cada commentId pertence a um evento da lista).
+  const commentToEvent = new Map<string, string>()
+  for (const r of commentReactions) {
+    commentToEvent.set(r.commentId, '')
+  }
+  if (commentReactions.length > 0) {
+    const comments = await prisma.comment.findMany({
+      where: { id: { in: commentReactions.map((r) => r.commentId) } },
+      select: { id: true, eventId: true },
+    })
+    for (const c of comments) {
+      if (c.eventId) commentToEvent.set(c.id, c.eventId)
+    }
+    for (const r of commentReactions) {
+      const eventId = commentToEvent.get(r.commentId)
+      if (eventId) {
+        const entry = map.get(eventId)
+        if (entry) entry.commentsLiked.add(r.commentId)
+      }
+    }
+  }
+
+  return map
 }
 
 export type MapEventPoint = {
@@ -325,8 +403,7 @@ export async function findEventsForMap(
 
   const engagement = new Map<string, number>()
   for (const row of grouped) {
-    const w =
-      row.type === 'CONFIRMED' ? 2 : row.type === 'INTERESTED' ? 1 : 0
+    const w = row.type === 'CONFIRMED' ? 2 : row.type === 'INTERESTED' ? 1 : 0
     engagement.set(
       row.eventId,
       (engagement.get(row.eventId) ?? 0) + row._count._all * w,
@@ -375,7 +452,9 @@ export async function createEventImage(
     _max: { order: true },
   })
   const nextOrder = (agg._max.order ?? -1) + 1
-  return prisma.eventImage.create({ data: { ...data, eventId, order: nextOrder } })
+  return prisma.eventImage.create({
+    data: { ...data, eventId, order: nextOrder },
+  })
 }
 
 export async function findEventImageKeys(eventId: string) {

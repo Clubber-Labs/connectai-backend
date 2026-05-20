@@ -5,15 +5,17 @@ import {
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod'
 import {
+  deleteCommentReaction,
   deleteEventReaction,
   deletePostReaction,
+  postCommentReaction,
   postEventReaction,
   postPostReaction,
 } from './reactions.controller'
 import {
+  commentReactionParamSchema,
   eventReactionParamSchema,
   postReactionParamSchema,
-  reactionBodySchema,
 } from './reactions.schema'
 
 export async function reactionsRoutes(app: FastifyInstance) {
@@ -22,11 +24,10 @@ export async function reactionsRoutes(app: FastifyInstance) {
 
   const api = app.withTypeProvider<ZodTypeProvider>()
 
-  // Reações em eventos
   api.post(
     '/events/:eventId/reactions',
     {
-      schema: { params: eventReactionParamSchema, body: reactionBodySchema },
+      schema: { params: eventReactionParamSchema },
       onRequest: [app.authenticate],
     },
     postEventReaction,
@@ -41,11 +42,10 @@ export async function reactionsRoutes(app: FastifyInstance) {
     deleteEventReaction,
   )
 
-  // Reações em posts
   api.post(
     '/posts/:postId/reactions',
     {
-      schema: { params: postReactionParamSchema, body: reactionBodySchema },
+      schema: { params: postReactionParamSchema },
       onRequest: [app.authenticate],
     },
     postPostReaction,
@@ -58,5 +58,23 @@ export async function reactionsRoutes(app: FastifyInstance) {
       onRequest: [app.authenticate],
     },
     deletePostReaction,
+  )
+
+  api.post(
+    '/comments/:commentId/reactions',
+    {
+      schema: { params: commentReactionParamSchema },
+      onRequest: [app.authenticate],
+    },
+    postCommentReaction,
+  )
+
+  api.delete(
+    '/comments/:commentId/reactions',
+    {
+      schema: { params: commentReactionParamSchema },
+      onRequest: [app.authenticate],
+    },
+    deleteCommentReaction,
   )
 }

@@ -23,24 +23,27 @@ model User {
   lastname       String
   username       String   @unique
   email          String   @unique
-  password       String
-  phone          String   @unique
+  password       String?
+  phone          String?  @unique
   bio            String?
   avatarUrl      String?
   avatarKey      String?
   isPrivate      Boolean  @default(false)
+  isPremium      Boolean  @default(false)
   followersCount Int      @default(0)
   followingCount Int      @default(0)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
-  birthdate      DateTime
+  birthdate      DateTime?
   events           Event[]
   attendances      EventAttendance[]
   posts            Post[]
   comments         Comment[]
   reactions        Reaction[]
+  commentReactions CommentReaction[]
   eventInvitesSent EventInvite[]     @relation("inviter")
   eventInvitesReceived EventInvite[] @relation("invited")
+  socialAccounts   SocialAccount[]
 
   role UserRole @default(USER)
   isBanned Boolean @default(false)
@@ -54,7 +57,29 @@ model User {
   resolvedReports Report[] @relation("ResolvedReports")
 
   reports Report[] @relation("reporterReports")
+
+  featuredEventsCreated FeaturedEvent[] @relation("featuredEventCreator")
   @@map("users")
+}
+
+enum SocialProvider {
+  GOOGLE
+  FACEBOOK
+}
+
+model SocialAccount {
+  id             String         @id @default(uuid())
+  userId         String
+  provider       SocialProvider
+  providerUserId String
+  email          String?
+  createdAt      DateTime       @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId])
+  @@index([userId])
+  @@map("social_accounts")
 }
 
 enum FollowStatus {
@@ -88,6 +113,7 @@ model Event {
   address     String?
   category    String
   isPublic    Boolean  @default(true)
+  isFeatured  Boolean  @default(false)
   maxCapacity Int?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -103,9 +129,11 @@ model Event {
   invites     EventInvite[]
   reports     Report[]
   images      EventImage[]
+  features    FeaturedEvent[]
 
   @@index([date])
   @@index([isPublic, date])
+  @@index([isFeatured, date, id])
   @@map("events")
 }
 
@@ -128,15 +156,6 @@ model EventAttendance {
   @@unique([userId, eventId])
   @@index([eventId, createdAt])
   @@map("event_attendances")
-}
-
-enum ReactionType {
-  LIKE
-  LOVE
-  HAHA
-  WOW
-  SAD
-  ANGRY
 }
 
 model Post {
@@ -169,7 +188,8 @@ model Comment {
   event  Event? @relation(fields: [eventId], references: [id], onDelete: Cascade)
   post   Post?  @relation(fields: [postId], references: [id], onDelete: Cascade)
   reports Report[]
-  
+  reactions CommentReaction[]
+
   @@index([eventId, createdAt])
   @@index([postId, createdAt])
   @@map("comments")
@@ -192,13 +212,11 @@ model EventInvite {
 }
 
 model Reaction {
-  id        String       @id @default(uuid())
-  type      ReactionType
+  id        String   @id @default(uuid())
   userId    String
   eventId   String?
   postId    String?
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  createdAt DateTime @default(now())
 
   user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   event Event? @relation(fields: [eventId], references: [id], onDelete: Cascade)
@@ -207,6 +225,20 @@ model Reaction {
   @@unique([userId, eventId], map: "reactions_user_event_unique")
   @@unique([userId, postId], map: "reactions_user_post_unique")
   @@map("reactions")
+}
+
+model CommentReaction {
+  id        String   @id @default(uuid())
+  userId    String
+  commentId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, commentId], map: "comment_reactions_user_comment_unique")
+  @@index([commentId])
+  @@map("comment_reactions")
 }
 
 enum ReportReason {
@@ -268,3 +300,17 @@ model EventImage {
   @@map("event_images")
 }
 
+model FeaturedEvent {
+  id         String    @id @default(uuid())
+  eventId    String
+  event      Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  startsAt   DateTime
+  endsAt     DateTime
+  createdBy  String
+  creator    User      @relation("featuredEventCreator", fields: [createdBy], references: [id])
+  createdAt  DateTime  @default(now())
+  canceledAt DateTime?
+
+  @@index([eventId, canceledAt, startsAt, endsAt])
+  @@map("featured_events")
+}
