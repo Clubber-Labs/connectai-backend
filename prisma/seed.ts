@@ -1,9 +1,5 @@
 import { faker } from '@faker-js/faker/locale/pt_BR'
-import {
-  AttendanceType,
-  FollowStatus,
-  PrismaClient,
-} from '@prisma/client'
+import { AttendanceType, FollowStatus, PrismaClient } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 
 const prisma = new PrismaClient()
