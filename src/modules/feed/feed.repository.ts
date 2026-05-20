@@ -2,6 +2,7 @@ import { type AttendanceType, Prisma } from '@prisma/client'
 import { buildLifecycleWhere } from '../../lib/event-filters'
 import { computeEventStatus } from '../../lib/event-lifecycle'
 import { prisma } from '../../lib/prisma'
+import { authorVisibleWhere } from '../../lib/profile-visibility'
 import { buildCommentInclude } from '../comments/comments.repository'
 import type { FeedQuery } from './feed.schema'
 
@@ -115,6 +116,7 @@ export async function findFeedCandidates(
     where: {
       AND: [
         lifecycleWhere,
+        authorVisibleWhere(viewerId),
         ...(categoryWhere ? [categoryWhere] : []),
         ...(dateRange ? [dateRange] : []),
         {

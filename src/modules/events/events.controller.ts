@@ -32,7 +32,7 @@ export async function getEventsMap(
   reply: FastifyReply,
 ) {
   const query = request.query as MapEventsQuery
-  const points = await listEventsForMap(query)
+  const points = await listEventsForMap(query, request.user?.sub)
   return reply.send(points)
 }
 
