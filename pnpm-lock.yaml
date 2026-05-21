@@ -5,9 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  fast-uri: '>=3.1.2'
-  effect: '>=3.20.0'
-  defu: '>=6.1.5'
+  fast-uri: ^3.1.2
+  effect: ^3.20.0
+  defu: ^6.1.5
 
 importers:
 
@@ -58,6 +58,9 @@ importers:
       ioredis:
         specifier: ^5.10.1
         version: 5.10.1
+      prisma:
+        specifier: ^6.19.2
+        version: 6.19.2(typescript@5.9.3)
       sharp:
         specifier: ^0.34.5
         version: 0.34.5
@@ -86,9 +89,6 @@ importers:
       nodemon:
         specifier: ^3.1.14
         version: 3.1.14
-      prisma:
-        specifier: ^6.19.2
-        version: 6.19.2(typescript@5.9.3)
       ts-node:
         specifier: ^10.9.2
         version: 10.9.2(@types/node@25.5.0)(typescript@5.9.3)
