@@ -8,6 +8,7 @@ import { findEventIdsWithinRadius } from '../../lib/spatial'
 import { buildApp } from '../../test/app'
 import {
   makeAttendance,
+  makeComment,
   makeEvent,
   makeFollow,
   makeInvite,
@@ -117,6 +118,21 @@ describe('GET /events', () => {
           e.isPublic && Array.isArray(e.recentComments),
       ),
     ).toBe(true)
+  })
+
+  it('lista retorna no máximo 1 comentário recente (take:1, sem over-fetch)', async () => {
+    const author = await makeUser()
+    const event = await makeEvent(author.id, { isPublic: true })
+    await makeComment(author.id, event.id, 'comentário 1')
+    await makeComment(author.id, event.id, 'comentário 2')
+
+    const res = await app.inject({ method: 'GET', url: '/events' })
+
+    expect(res.statusCode).toBe(200)
+    const found = res.json().data.find((e: { id: string }) => e.id === event.id)
+    expect(found.recentComments).toHaveLength(1)
+    // o contador total continua exato (o card usa _count pra "ver todos os N")
+    expect(found._count.comments).toBe(2)
   })
 
   it('filtra por múltiplas categorias (?category=A&category=B)', async () => {

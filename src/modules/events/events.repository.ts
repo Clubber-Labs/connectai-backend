@@ -64,7 +64,10 @@ function buildSharedIncludes(): Prisma.EventInclude {
     },
     comments: {
       orderBy: { createdAt: 'desc' },
-      take: 2,
+      // 1 comentário: o feed (EventCard) só renderiza recentComments[0] no
+      // preview; a tela expandida/detalhe carrega os comentários completos por
+      // endpoint dedicado. Buscar 2 era over-fetch que ninguém renderiza.
+      take: 1,
       include: buildCommentInclude(),
     },
     images: {
