@@ -1,4 +1,5 @@
 import { cache } from '../../lib/cache'
+import { snapRadiusKm, snapToGrid } from '../../lib/spatial'
 import { deleteUploaded, uploadEventImage } from '../../lib/uploads'
 import { checkEventAccess } from '../event-invites/event-invites.access'
 import { findAcceptedFollowingIds } from '../follows/follows.repository'
@@ -48,29 +49,37 @@ type NormalizedListResult = {
 }
 
 /**
- * Lista pública de eventos. Cache shared (sem viewerId na key) é hidratado
- * com viewer state depois — atende RNF05.2 (hit rate >90%) sem perder
- * personalização de userLiked/userAttendance.
+ * Lista pública de eventos. Cache shared (sem viewer state na key, só o set
+ * que depende de visibilidade) hidratado com viewer state depois — atende
+ * RNF05.2 (hit rate >90%) sem perder personalização de userLiked/attendance.
  *
- * orderBy=distance faz bypass do cache porque depende de lat/lng do
- * request específico — caching teria hit-rate praticamente zero.
+ * Proximidade (orderBy=distance e/ou radiusKm) deixou de fazer bypass: as
+ * coordenadas são "snapadas" a uma grade (~110m) antes de montar a chave e a
+ * query, então vizinhos compartilham a mesma entrada. O snap afeta ordenação
+ * e chave; no radiusKm vale tolerância de borda ~156m (ver snapToGrid).
  */
 export async function listEvents(query: ListEventsQuery, viewerId?: string) {
-  if (query.orderBy === 'distance') {
-    const { events, nextCursor } = await findPublicEventsByDistance(
-      query,
-      query.limit,
-      query.cursor,
-      viewerId,
-    )
-    const shared = { data: events, nextCursor }
-    return mergeViewerState(shared, viewerId)
-  }
+  const snapped =
+    query.nearLat !== undefined && query.nearLng !== undefined
+      ? snapToGrid(query.nearLat, query.nearLng)
+      : undefined
+  const snappedRadius =
+    query.radiusKm !== undefined ? snapRadiusKm(query.radiusKm) : undefined
 
-  // viewerId entra na chave de cache porque findPublicEvents agora filtra
-  // por visibilidade do autor no SQL (authorVisibleWhere) — eventos de
-  // perfis privados só aparecem pra followers. Sem viewerId na chave o
-  // cache vazaria eventos privados entre usuários diferentes.
+  // Query efetiva usa as coords snapadas: a busca (KNN/raio) e a chave de
+  // cache batem, então o resultado cacheado corresponde à chave.
+  const effectiveQuery: ListEventsQuery = snapped
+    ? {
+        ...query,
+        nearLat: snapped.lat,
+        nearLng: snapped.lng,
+        ...(snappedRadius !== undefined && { radiusKm: snappedRadius }),
+      }
+    : query
+
+  // viewerId entra na chave porque a visibilidade de autor é filtrada no SQL
+  // (perfis privados só aparecem pra followers). orderBy + params espaciais
+  // SNAPADOS também entram — sem eles, células/raios distintos colidiriam.
   const cacheKey = cache.key(
     'events:public',
     viewerId ?? 'anon',
@@ -79,21 +88,36 @@ export async function listEvents(query: ListEventsQuery, viewerId?: string) {
     query.includePast ? '1' : '0',
     query.dateFrom?.toISOString() ?? '',
     query.dateTo?.toISOString() ?? '',
+    query.orderBy,
+    snapped ? `${snapped.lat},${snapped.lng}` : '',
+    snappedRadius ?? '',
     query.limit,
     query.cursor ?? '',
   )
 
   let shared = await cache.get<SharedListResult>(cacheKey)
   if (!shared) {
-    const events = await findPublicEvents(
-      query,
-      query.limit,
-      query.cursor,
-      viewerId,
-    )
-    const nextCursor =
-      events.length === query.limit ? events[events.length - 1].id : null
-    shared = { data: events, nextCursor }
+    if (effectiveQuery.orderBy === 'distance') {
+      const { events, nextCursor } = await findPublicEventsByDistance(
+        effectiveQuery,
+        effectiveQuery.limit,
+        effectiveQuery.cursor,
+        viewerId,
+      )
+      shared = { data: events, nextCursor }
+    } else {
+      const events = await findPublicEvents(
+        effectiveQuery,
+        effectiveQuery.limit,
+        effectiveQuery.cursor,
+        viewerId,
+      )
+      const nextCursor =
+        events.length === effectiveQuery.limit
+          ? events[events.length - 1].id
+          : null
+      shared = { data: events, nextCursor }
+    }
     await cache.set(cacheKey, shared, 60)
   }
 

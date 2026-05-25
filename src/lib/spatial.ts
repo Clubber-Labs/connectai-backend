@@ -27,6 +27,37 @@ export type LatLng = { latitude: number; longitude: number }
  */
 export const RADIUS_MAX_RESULTS = 1000
 
+/**
+ * Snap de coordenadas a uma grade de ~110m (3 casas decimais). Usuários
+ * próximos caem na mesma célula → compartilham a entrada de cache, o que
+ * destrava o hit-rate da busca por proximidade (RNF05.2). O snap afeta a
+ * ordenação e a chave de cache; no filtro por `radiusKm` aceita-se tolerância
+ * de borda de até ~156m (diagonal da célula) — "raio" é intenção difusa
+ * ("perto de mim") e o próprio GPS erra mais que isso.
+ */
+export function snapToGrid(
+  lat: number,
+  lng: number,
+  decimals = 3,
+): { lat: number; lng: number } {
+  const f = 10 ** decimals
+  return { lat: Math.round(lat * f) / f, lng: Math.round(lng * f) / f }
+}
+
+const RADIUS_LADDER = [1, 2, 5, 10, 25, 50, 100, 500]
+
+/**
+ * Sobe o raio ao degrau mais próximo de uma escada fixa, pra agrupar chaves
+ * de cache (sem isso cada raio arbitrário viraria uma entrada distinta).
+ * `radiusKm` é capado em 500 no schema, então sempre há um degrau ≥ km.
+ */
+export function snapRadiusKm(km: number): number {
+  return (
+    RADIUS_LADDER.find((r) => r >= km) ??
+    RADIUS_LADDER[RADIUS_LADDER.length - 1]
+  )
+}
+
 export type DistanceCursor = { dist: number; id: string }
 
 export type EventDistanceRow = { id: string; dist: number }

@@ -697,6 +697,32 @@ describe('cache de GET /events', () => {
 
     expect(await redis.keys('v1:events:public:*')).toHaveLength(0)
   })
+
+  it('orderBy=distance: coords na mesma célula compartilham cache (snap ~110m)', async () => {
+    const author = await makeUser()
+    await makeEvent(author.id, { latitude: -25.4, longitude: -49.3 })
+
+    // 1ª busca por proximidade — agora cacheia (antes dava bypass total)
+    await app.inject({
+      method: 'GET',
+      url: '/events?nearLat=-25.4001&nearLng=-49.3001&orderBy=distance',
+    })
+    expect(await redis.keys('v1:events:public:*')).toHaveLength(1)
+
+    // coords diferentes mas na MESMA célula (~110m) → mesma chave → hit
+    await app.inject({
+      method: 'GET',
+      url: '/events?nearLat=-25.4004&nearLng=-49.2997&orderBy=distance',
+    })
+    expect(await redis.keys('v1:events:public:*')).toHaveLength(1)
+
+    // célula diferente → chave nova
+    await app.inject({
+      method: 'GET',
+      url: '/events?nearLat=-25.5&nearLng=-49.3&orderBy=distance',
+    })
+    expect(await redis.keys('v1:events:public:*')).toHaveLength(2)
+  })
 })
 
 describe('GET /events/map', () => {
