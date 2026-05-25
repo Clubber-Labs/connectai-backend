@@ -15,6 +15,7 @@ import {
 import { env } from './lib/env'
 import { handlePrismaUniqueError } from './lib/errors'
 import { sanitizeLogUrl } from './lib/logger'
+import { registerMetrics } from './lib/metrics'
 import { redis } from './lib/redis'
 import { attendanceRoutes } from './modules/attendance/attendance.routes'
 import { authRoutes } from './modules/auth/auth.routes'
@@ -165,6 +166,8 @@ app.register(fastifySwagger, {
 app.register(ScalarApiReference, {
   routePrefix: '/docs',
 })
+
+registerMetrics(app)
 
 app.register(healthRoutes)
 app.register(authRoutes)

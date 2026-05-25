@@ -1,3 +1,8 @@
+import {
+  recordCacheHit,
+  recordCacheMiss,
+  recordCacheUnavailable,
+} from './metrics'
 import { redis } from './redis'
 
 const CACHE_VERSION = 'v1'
@@ -20,11 +25,18 @@ export const cache = {
   },
 
   async get<T>(key: string): Promise<T | null> {
-    if (!redis) return null
+    if (!redis) {
+      recordCacheUnavailable(key)
+      return null
+    }
 
     try {
       const data = await redis.get(key)
-      if (!data) return null
+      if (!data) {
+        recordCacheMiss(key)
+        return null
+      }
+      recordCacheHit(key)
       return JSON.parse(data) as T
     } catch (err) {
       logCacheError('get', err)

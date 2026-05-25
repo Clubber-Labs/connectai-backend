@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { buildLifecycleWhere } from '../../lib/event-filters'
 import type { EventStatus } from '../../lib/event-lifecycle'
+import { resetMetrics } from '../../lib/metrics'
 import { redis as nullableRedis } from '../../lib/redis'
 import { findEventIdsWithinRadius } from '../../lib/spatial'
 import { buildApp } from '../../test/app'
@@ -791,6 +792,27 @@ describe('cache de GET /events', () => {
       url: '/events?nearLat=-25.5&nearLng=-49.3&orderBy=distance',
     })
     expect(await redis.keys('v1:events:public:*')).toHaveLength(2)
+  })
+})
+
+describe('GET /metrics (instrumentação)', () => {
+  it('expõe formato Prometheus e conta hit/miss de cache', async () => {
+    resetMetrics()
+    const author = await makeUser()
+    await makeEvent(author.id, { isPublic: true })
+
+    // 1ª chamada = miss (popula o cache); 2ª = hit (mesma chave anon)
+    await app.inject({ method: 'GET', url: '/events' })
+    await app.inject({ method: 'GET', url: '/events' })
+
+    const res = await app.inject({ method: 'GET', url: '/metrics' })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toContain('text/plain')
+    const body = res.body
+    expect(body).toContain('http_request_duration_ms_bucket')
+    expect(body).toMatch(/cache_misses_total\{namespace="events:public"\} 1/)
+    expect(body).toMatch(/cache_hits_total\{namespace="events:public"\} 1/)
   })
 })
 

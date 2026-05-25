@@ -8,6 +8,7 @@ import {
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod'
 import { handlePrismaUniqueError } from '../lib/errors'
+import { registerMetrics } from '../lib/metrics'
 import { redis } from '../lib/redis'
 import { attendanceRoutes } from '../modules/attendance/attendance.routes'
 import { authRoutes } from '../modules/auth/auth.routes'
@@ -83,6 +84,8 @@ export function buildApp() {
       }
     },
   )
+
+  registerMetrics(app)
 
   app.register(healthRoutes)
   app.register(authRoutes)
