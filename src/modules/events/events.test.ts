@@ -590,6 +590,75 @@ describe('GET /events', () => {
   })
 })
 
+describe('GET /events?orderBy=popularity (RF07.6)', () => {
+  it('ordena por engajamento (CONFIRMED*2 + INTERESTED*1)', async () => {
+    const author = await makeUser()
+    const u1 = await makeUser()
+    const u2 = await makeUser()
+    const low = await makeEvent(author.id) // score 0
+    const mid = await makeEvent(author.id) // score 1
+    const high = await makeEvent(author.id) // score 4
+    await makeAttendance(u1.id, mid.id, 'INTERESTED')
+    await makeAttendance(u1.id, high.id, 'CONFIRMED')
+    await makeAttendance(u2.id, high.id, 'CONFIRMED')
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/events?orderBy=popularity',
+    })
+
+    expect(res.statusCode).toBe(200)
+    const ids = res.json().data.map((e: { id: string }) => e.id)
+    expect(ids).toEqual([high.id, mid.id, low.id])
+  })
+
+  it('paginação keyset estável (score, id)', async () => {
+    const author = await makeUser()
+    const u1 = await makeUser()
+    const u2 = await makeUser()
+    const u3 = await makeUser()
+    const a = await makeEvent(author.id) // 3
+    const b = await makeEvent(author.id) // 2
+    const c = await makeEvent(author.id) // 1
+    const d = await makeEvent(author.id) // 0
+    for (const u of [u1, u2, u3]) {
+      await makeAttendance(u.id, a.id, 'INTERESTED')
+    }
+    for (const u of [u1, u2]) {
+      await makeAttendance(u.id, b.id, 'INTERESTED')
+    }
+    await makeAttendance(u1.id, c.id, 'INTERESTED')
+
+    const page1 = await app.inject({
+      method: 'GET',
+      url: '/events?orderBy=popularity&limit=2',
+    })
+    expect(page1.statusCode).toBe(200)
+    const p1 = page1.json()
+    expect(p1.data.map((e: { id: string }) => e.id)).toEqual([a.id, b.id])
+    expect(p1.nextCursor).toBeTruthy()
+
+    const page2 = await app.inject({
+      method: 'GET',
+      url: `/events?orderBy=popularity&limit=2&cursor=${encodeURIComponent(p1.nextCursor)}`,
+    })
+    expect(page2.statusCode).toBe(200)
+    expect(page2.json().data.map((e: { id: string }) => e.id)).toEqual([
+      c.id,
+      d.id,
+    ])
+  })
+
+  it('cursor inválido em popularity retorna 400', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/events?orderBy=popularity&cursor=lixo-invalido',
+    })
+
+    expect(res.statusCode).toBe(400)
+  })
+})
+
 describe('cache de GET /events', () => {
   it('reage não invalida o cache da listagem pública', async () => {
     const author = await makeUser()

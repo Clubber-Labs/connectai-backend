@@ -343,3 +343,81 @@ export function decodeDistanceCursor(s: string): DistanceCursor | null {
     return null
   }
 }
+
+export type PopularityCursor = { score: number; id: string }
+
+export type EventPopularityRow = { id: string; score: number }
+
+/**
+ * Ranking por popularidade com paginação keyset (RF07.6).
+ *
+ * score = Σ(CONFIRMED·2 + INTERESTED·1) — mesma fórmula do heatmap
+ * (`findEventsForMap`). Agregado em SQL (LEFT JOIN + GROUP BY); o keyset
+ * `(score DESC, id ASC)` vai no HAVING porque score é agregado (não pode ir
+ * no WHERE). Visibilidade/lifecycle/categoria/data e o raio opcional reusam
+ * os predicados espaciais. `limit` exato (o caller pede limit+1 pra detectar
+ * próxima página sem cursor falso).
+ */
+export async function findEventIdsByPopularityKeyset(opts: {
+  limit: number
+  after?: PopularityCursor
+  center?: LatLng
+  radiusKm?: number
+  filters?: SpatialFilters
+  viewerId?: string
+}): Promise<EventPopularityRow[]> {
+  const { limit, after, center, radiusKm, filters = {}, viewerId } = opts
+
+  const where: Prisma.Sql[] = [
+    visibilityPredicate(viewerId),
+    spatialFiltersPredicate(filters),
+  ]
+  if (radiusKm !== undefined && center !== undefined) {
+    const point = Prisma.sql`ST_SetSRID(ST_MakePoint(${center.longitude}, ${center.latitude}), 4326)::geography`
+    where.push(Prisma.sql`ST_DWithin(e.location, ${point}, ${radiusKm * 1000})`)
+  }
+
+  const score = Prisma.sql`COALESCE(SUM(CASE WHEN att.type = 'CONFIRMED' THEN 2 WHEN att.type = 'INTERESTED' THEN 1 ELSE 0 END), 0)`
+  const having =
+    after !== undefined
+      ? Prisma.sql`HAVING (${score} < ${after.score} OR (${score} = ${after.score} AND e.id > ${after.id}))`
+      : Prisma.empty
+
+  const rows = await prisma.$queryRaw<{ id: string; score: number | bigint }[]>(
+    Prisma.sql`
+      SELECT e.id, ${score} AS score
+      FROM events e
+      INNER JOIN users a ON a.id = e."authorId"
+      LEFT JOIN event_attendances att ON att."eventId" = e.id
+      WHERE ${Prisma.join(where, ' AND ')}
+      GROUP BY e.id
+      ${having}
+      ORDER BY score DESC, e.id ASC
+      LIMIT ${limit}
+    `,
+  )
+  return rows.map((r) => ({ id: r.id, score: Number(r.score) }))
+}
+
+export function encodePopularityCursor(c: PopularityCursor): string {
+  return Buffer.from(JSON.stringify(c), 'utf8').toString('base64url')
+}
+
+export function decodePopularityCursor(s: string): PopularityCursor | null {
+  try {
+    const decoded = JSON.parse(Buffer.from(s, 'base64url').toString('utf8'))
+    if (
+      typeof decoded === 'object' &&
+      decoded !== null &&
+      typeof decoded.score === 'number' &&
+      Number.isFinite(decoded.score) &&
+      typeof decoded.id === 'string' &&
+      decoded.id.length > 0
+    ) {
+      return { score: decoded.score, id: decoded.id }
+    }
+    return null
+  } catch {
+    return null
+  }
+}

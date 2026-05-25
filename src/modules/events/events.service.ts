@@ -15,6 +15,7 @@ import {
   findEventsInViewport,
   findPublicEvents,
   findPublicEventsByDistance,
+  findPublicEventsByPopularity,
   findTopAttendancesByEvent,
   findViewerStatesForEvents,
   type NormalizedEvent,
@@ -99,6 +100,14 @@ export async function listEvents(query: ListEventsQuery, viewerId?: string) {
   if (!shared) {
     if (effectiveQuery.orderBy === 'distance') {
       const { events, nextCursor } = await findPublicEventsByDistance(
+        effectiveQuery,
+        effectiveQuery.limit,
+        effectiveQuery.cursor,
+        viewerId,
+      )
+      shared = { data: events, nextCursor }
+    } else if (effectiveQuery.orderBy === 'popularity') {
+      const { events, nextCursor } = await findPublicEventsByPopularity(
         effectiveQuery,
         effectiveQuery.limit,
         effectiveQuery.cursor,

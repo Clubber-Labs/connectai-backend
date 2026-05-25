@@ -14,10 +14,14 @@ import {
   type Bbox,
   type DistanceCursor,
   decodeDistanceCursor,
+  decodePopularityCursor,
   encodeDistanceCursor,
+  encodePopularityCursor,
   findEventIdsByDistanceKeyset,
+  findEventIdsByPopularityKeyset,
   findEventIdsInBbox,
   findEventIdsWithinRadius,
+  type PopularityCursor,
 } from '../../lib/spatial'
 import {
   buildCommentInclude,
@@ -275,6 +279,86 @@ export async function findPublicEventsByDistance(
   const last = pageRows[pageRows.length - 1]
   const nextCursor = hasMore
     ? encodeDistanceCursor({ dist: last.dist, id: last.id })
+    : null
+
+  return {
+    events: ordered.map((e) => normalizeShared(e, now)),
+    nextCursor,
+  }
+}
+
+/**
+ * Listagem pública ordenada por popularidade (RF07.6, keyset por score).
+ *
+ * Mesmo padrão de `findPublicEventsByDistance`: o keyset agrega/filtra no SQL
+ * e devolve `limit (+1)` IDs já ordenados por score; o Prisma só hidrata os
+ * includes por `id IN` e reordena pela ordem do keyset. `radiusKm` opcional
+ * (popularidade "perto de mim").
+ */
+export async function findPublicEventsByPopularity(
+  filters: Pick<
+    ListEventsQuery,
+    | 'category'
+    | 'status'
+    | 'includePast'
+    | 'dateFrom'
+    | 'dateTo'
+    | 'nearLat'
+    | 'nearLng'
+    | 'radiusKm'
+  >,
+  limit: number,
+  cursor?: string,
+  viewerId?: string,
+  now: Date = new Date(),
+): Promise<{ events: SharedEvent[]; nextCursor: string | null }> {
+  let after: PopularityCursor | undefined
+  if (cursor) {
+    const parsed = decodePopularityCursor(cursor)
+    if (parsed === null) {
+      throw { statusCode: 400, message: 'Cursor de paginação inválido' }
+    }
+    after = parsed
+  }
+
+  const center =
+    filters.nearLat !== undefined && filters.nearLng !== undefined
+      ? { latitude: filters.nearLat, longitude: filters.nearLng }
+      : undefined
+
+  const rankRows = await findEventIdsByPopularityKeyset({
+    limit: limit + 1,
+    after,
+    center,
+    radiusKm: filters.radiusKm,
+    filters: {
+      category: filters.category,
+      dateFrom: filters.dateFrom,
+      dateTo: filters.dateTo,
+      status: filters.status,
+      includePast: filters.includePast,
+      now,
+    },
+    viewerId,
+  })
+  if (rankRows.length === 0) return { events: [], nextCursor: null }
+
+  const hasMore = rankRows.length > limit
+  const pageRows = hasMore ? rankRows.slice(0, limit) : rankRows
+
+  const events = (await prisma.event.findMany({
+    where: { id: { in: pageRows.map((r) => r.id) } },
+    include: buildSharedIncludes(),
+  })) as unknown as PrismaSharedEvent[]
+
+  const byId = new Map(events.map((e) => [e.id, e]))
+  const ordered = pageRows
+    .map((r) => byId.get(r.id))
+    .filter((e): e is PrismaSharedEvent => e !== undefined)
+
+  const last = pageRows[pageRows.length - 1]
+  const nextCursor = hasMore
+    ? encodePopularityCursor({ score: last.score, id: last.id })
     : null
 
   return {
