@@ -12,7 +12,10 @@ import { prisma } from '../../lib/prisma'
 import { authorVisibleWhere } from '../../lib/profile-visibility'
 import {
   type Bbox,
-  findEventIdsByDistance,
+  type DistanceCursor,
+  decodeDistanceCursor,
+  encodeDistanceCursor,
+  findEventIdsByDistanceKeyset,
   findEventIdsInBbox,
   findEventIdsWithinRadius,
 } from '../../lib/spatial'
@@ -133,31 +136,15 @@ export async function findPublicEvents(
     | 'nearLat'
     | 'nearLng'
     | 'radiusKm'
-    | 'orderBy'
   >,
   limit: number,
   cursor?: string,
   viewerId?: string,
   now: Date = new Date(),
 ): Promise<SharedEvent[]> {
-  const KNN_OVERFETCH = 20
-  const KNN_OVERFETCH_CAP = 1000
-
   let spatialIdFilter: string[] | undefined
 
   if (
-    filters.orderBy === 'distance' &&
-    filters.nearLat !== undefined &&
-    filters.nearLng !== undefined
-  ) {
-    spatialIdFilter = await findEventIdsByDistance(
-      { latitude: filters.nearLat, longitude: filters.nearLng },
-      Math.min(limit * KNN_OVERFETCH, KNN_OVERFETCH_CAP),
-      filters.radiusKm,
-      viewerId,
-    )
-    if (spatialIdFilter.length === 0) return []
-  } else if (
     filters.radiusKm !== undefined &&
     filters.nearLat !== undefined &&
     filters.nearLng !== undefined
@@ -165,6 +152,14 @@ export async function findPublicEvents(
     spatialIdFilter = await findEventIdsWithinRadius(
       { latitude: filters.nearLat, longitude: filters.nearLng },
       filters.radiusKm,
+      {
+        category: filters.category,
+        dateFrom: filters.dateFrom,
+        dateTo: filters.dateTo,
+        status: filters.status,
+        includePast: filters.includePast,
+        now,
+      },
       viewerId,
     )
     if (spatialIdFilter.length === 0) return []
@@ -196,22 +191,91 @@ export async function findPublicEvents(
           : []),
       ],
     },
-    take: filters.orderBy === 'distance' ? undefined : limit,
-    ...(cursor &&
-      filters.orderBy !== 'distance' && { skip: 1, cursor: { id: cursor } }),
+    take: limit,
+    ...(cursor && { skip: 1, cursor: { id: cursor } }),
     orderBy: [{ isFeatured: 'desc' }, { date: 'asc' }, { id: 'asc' }],
     include: buildSharedIncludes(),
   })) as unknown as PrismaSharedEvent[]
 
-  const ordered =
-    filters.orderBy === 'distance' && spatialIdFilter
-      ? spatialIdFilter
-          .map((id) => events.find((e) => e.id === id))
-          .filter((e): e is PrismaSharedEvent => e !== undefined)
-          .slice(0, limit)
-      : events
+  return events.map((e) => normalizeShared(e, now))
+}
 
-  return ordered.map((e) => normalizeShared(e, now))
+/**
+ * Listagem pública ordenada por distância (KNN com paginação keyset).
+ *
+ * Os filtros (lifecycle/categoria/data/visibilidade) vão pro SQL do keyset,
+ * que devolve exatamente `limit` IDs já filtrados — o Prisma só hidrata os
+ * includes por `id IN` (sem re-filtrar) e reordena pela ordem do KNN. Assim
+ * a página nunca volta incompleta por filtro aplicado tarde demais, e o
+ * `nextCursor` é o último item visitado pelo KNN.
+ */
+export async function findPublicEventsByDistance(
+  filters: Pick<
+    ListEventsQuery,
+    | 'category'
+    | 'status'
+    | 'includePast'
+    | 'dateFrom'
+    | 'dateTo'
+    | 'nearLat'
+    | 'nearLng'
+    | 'radiusKm'
+  >,
+  limit: number,
+  cursor?: string,
+  viewerId?: string,
+  now: Date = new Date(),
+): Promise<{ events: SharedEvent[]; nextCursor: string | null }> {
+  if (filters.nearLat === undefined || filters.nearLng === undefined) {
+    return { events: [], nextCursor: null }
+  }
+
+  let after: DistanceCursor | undefined
+  if (cursor) {
+    const parsed = decodeDistanceCursor(cursor)
+    if (parsed === null) {
+      throw { statusCode: 400, message: 'Cursor de paginação inválido' }
+    }
+    after = parsed
+  }
+
+  const knnRows = await findEventIdsByDistanceKeyset({
+    center: { latitude: filters.nearLat, longitude: filters.nearLng },
+    limit,
+    radiusKm: filters.radiusKm,
+    after,
+    filters: {
+      category: filters.category,
+      dateFrom: filters.dateFrom,
+      dateTo: filters.dateTo,
+      status: filters.status,
+      includePast: filters.includePast,
+      now,
+    },
+    viewerId,
+  })
+  if (knnRows.length === 0) return { events: [], nextCursor: null }
+
+  const events = (await prisma.event.findMany({
+    where: { id: { in: knnRows.map((r) => r.id) } },
+    include: buildSharedIncludes(),
+  })) as unknown as PrismaSharedEvent[]
+
+  const byId = new Map(events.map((e) => [e.id, e]))
+  const ordered = knnRows
+    .map((r) => byId.get(r.id))
+    .filter((e): e is PrismaSharedEvent => e !== undefined)
+
+  const last = knnRows[knnRows.length - 1]
+  const nextCursor =
+    knnRows.length === limit
+      ? encodeDistanceCursor({ dist: last.dist, id: last.id })
+      : null
+
+  return {
+    events: ordered.map((e) => normalizeShared(e, now)),
+    nextCursor,
+  }
 }
 
 export async function findEventsByAuthor(

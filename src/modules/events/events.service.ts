@@ -13,6 +13,7 @@ import {
   findEventsForMap,
   findEventsInViewport,
   findPublicEvents,
+  findPublicEventsByDistance,
   findTopAttendancesByEvent,
   findViewerStatesForEvents,
   type NormalizedEvent,
@@ -56,13 +57,12 @@ type NormalizedListResult = {
  */
 export async function listEvents(query: ListEventsQuery, viewerId?: string) {
   if (query.orderBy === 'distance') {
-    const events = await findPublicEvents(
+    const { events, nextCursor } = await findPublicEventsByDistance(
       query,
       query.limit,
       query.cursor,
       viewerId,
     )
-    const nextCursor = null // ordenação por distância não usa cursor pagination
     const shared = { data: events, nextCursor }
     return mergeViewerState(shared, viewerId)
   }

@@ -86,7 +86,10 @@ export const listEventsQuerySchema = z
     nearLng: z.coerce.number().min(-180).max(180).optional(),
     radiusKm: z.coerce.number().positive().max(500).optional(),
     orderBy: z.enum(['date', 'distance']).default('date'),
-    cursor: z.string().uuid().optional(),
+    // Cursor opaco: em orderBy=date é o uuid do último item; em
+    // orderBy=distance é base64url de {dist,id}. O schema valida só o
+    // shape mínimo — o decode acontece no repository.
+    cursor: z.string().min(1).max(256).optional(),
     limit: z.coerce.number().int().min(1).max(50).default(20),
   })
   .refine((q) => (q.nearLat === undefined) === (q.nearLng === undefined), {
@@ -105,10 +108,6 @@ export const listEventsQuerySchema = z
       (q.nearLat !== undefined && q.nearLng !== undefined),
     { message: 'orderBy=distance exige nearLat e nearLng', path: ['orderBy'] },
   )
-  .refine((q) => q.orderBy !== 'distance' || q.cursor === undefined, {
-    message: 'orderBy=distance não suporta paginação via cursor',
-    path: ['cursor'],
-  })
 
 export const mapEventsQuerySchema = z
   .object({

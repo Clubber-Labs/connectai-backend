@@ -258,13 +258,147 @@ describe('GET /events', () => {
     expect(res.statusCode).toBe(400)
   })
 
-  it('retorna 400 quando orderBy=distance combinado com cursor', async () => {
+  it('orderBy=distance: primeira página retorna mais próximos + nextCursor', async () => {
+    const author = await makeUser()
+    const ids: string[] = []
+    for (let i = 0; i < 5; i++) {
+      const e = await makeEvent(author.id, {
+        latitude: -25.4,
+        longitude: -49.3 + i * 0.05,
+      })
+      ids.push(e.id)
+    }
+
     const res = await app.inject({
       method: 'GET',
-      url: '/events?nearLat=-25.4&nearLng=-49.3&orderBy=distance&cursor=00000000-0000-0000-0000-000000000000',
+      url: '/events?nearLat=-25.4&nearLng=-49.3&orderBy=distance&limit=2',
+    })
+
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body.data.map((e: { id: string }) => e.id)).toEqual([ids[0], ids[1]])
+    expect(body.nextCursor).toBeTruthy()
+  })
+
+  it('orderBy=distance: segunda página via cursor sem overlap', async () => {
+    const author = await makeUser()
+    const ids: string[] = []
+    for (let i = 0; i < 5; i++) {
+      const e = await makeEvent(author.id, {
+        latitude: -25.4,
+        longitude: -49.3 + i * 0.05,
+      })
+      ids.push(e.id)
+    }
+
+    const page1 = await app.inject({
+      method: 'GET',
+      url: '/events?nearLat=-25.4&nearLng=-49.3&orderBy=distance&limit=2',
+    })
+    const cursor = page1.json().nextCursor as string
+    const page1Ids = page1.json().data.map((e: { id: string }) => e.id)
+
+    const page2 = await app.inject({
+      method: 'GET',
+      url: `/events?nearLat=-25.4&nearLng=-49.3&orderBy=distance&limit=2&cursor=${encodeURIComponent(cursor)}`,
+    })
+
+    expect(page2.statusCode).toBe(200)
+    const page2Ids = page2.json().data.map((e: { id: string }) => e.id)
+    expect(page2Ids).toEqual([ids[2], ids[3]])
+    expect(page2Ids.some((id: string) => page1Ids.includes(id))).toBe(false)
+  })
+
+  it('radiusKm: mais de 1000 resultados retorna 400 (cap de abuso)', async () => {
+    const author = await makeUser()
+    const rows = Array.from({ length: 1001 }, (_, i) => ({
+      title: `Bulk ${i}`,
+      description: `Bulk descrição ${i}`,
+      date: new Date(Date.now() + 86_400_000),
+      latitude: -25.4,
+      longitude: -49.3,
+      category: 'Festa',
+      isPublic: true,
+      authorId: author.id,
+    }))
+    await testPrisma.event.createMany({ data: rows })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/events?nearLat=-25.4&nearLng=-49.3&radiusKm=50',
     })
 
     expect(res.statusCode).toBe(400)
+  })
+
+  it('orderBy=distance: cursor inválido retorna 400', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/events?nearLat=-25.4&nearLng=-49.3&orderBy=distance&cursor=lixo-invalido',
+    })
+
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('orderBy=distance: empate de distância ordena por id ascendente', async () => {
+    const author = await makeUser()
+    const a = await makeEvent(author.id, { latitude: -25.4, longitude: -49.3 })
+    const b = await makeEvent(author.id, { latitude: -25.4, longitude: -49.3 })
+    const c = await makeEvent(author.id, { latitude: -25.4, longitude: -49.3 })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/events?nearLat=-25.4&nearLng=-49.3&orderBy=distance',
+    })
+
+    expect(res.statusCode).toBe(200)
+    const ids = res.json().data.map((e: { id: string }) => e.id)
+    expect(ids).toEqual([a.id, b.id, c.id].sort())
+  })
+
+  it('orderBy=distance: lifecycle no SQL — cada status retorna o conjunto certo', async () => {
+    const author = await makeUser()
+    const now = Date.now()
+    const upcoming = await makeEvent(author.id, {
+      date: new Date(now + 7 * 86_400_000),
+    })
+    const soon = await makeEvent(author.id, { date: new Date(now + 3_600_000) })
+    const ongoing = await makeEvent(author.id, {
+      date: new Date(now - 3_600_000),
+      endDate: new Date(now + 3_600_000),
+    })
+    const past = await makeEvent(author.id, {
+      date: new Date(now - 10 * 86_400_000),
+    })
+    const canceled = await makeEvent(author.id, {
+      date: new Date(now + 86_400_000),
+      canceledAt: new Date(),
+    })
+
+    const q = (extra = '') =>
+      app
+        .inject({
+          method: 'GET',
+          url: `/events?nearLat=-25.4&nearLng=-49.3&orderBy=distance${extra}`,
+        })
+        .then((r) =>
+          r
+            .json()
+            .data.map((e: { id: string }) => e.id)
+            .sort(),
+        )
+
+    expect(await q('&status=UPCOMING')).toEqual([upcoming.id])
+    expect(await q('&status=SOON')).toEqual([soon.id])
+    expect(await q('&status=ONGOING')).toEqual([ongoing.id])
+    expect(await q('&status=PAST')).toEqual([past.id])
+    expect(await q('&status=CANCELED')).toEqual([canceled.id])
+    // sem status: exclui PAST e CANCELED
+    expect(await q()).toEqual([upcoming.id, soon.id, ongoing.id].sort())
+    // includePast=true: inclui PAST, ainda exclui CANCELED
+    expect(await q('&includePast=true')).toEqual(
+      [upcoming.id, soon.id, ongoing.id, past.id].sort(),
+    )
   })
 
   it('orderBy=distance respeita radiusKm quando combinados', async () => {
