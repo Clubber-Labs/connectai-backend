@@ -14,6 +14,7 @@ export async function postPost(request: FastifyRequest, reply: FastifyReply) {
     eventId,
     request.body as CreatePostBody,
   )
+  request.log.info(`User ${request.user.sub} created a post in event ${eventId} with content: ${JSON.stringify(request.body)}`)
   return reply.status(201).send(post)
 }
 
@@ -26,11 +27,13 @@ export async function getPosts(request: FastifyRequest, reply: FastifyReply) {
     limit,
     cursor,
   )
+  request.log.info(`User ${request.user.sub} requested posts for event ${eventId}`)
   return reply.send(result)
 }
 
 export async function deletePost(request: FastifyRequest, reply: FastifyReply) {
   const { eventId, postId } = request.params as PostParam
   await removePost(eventId, postId, request.user.sub)
+  request.log.info(`User ${request.user.sub} deleted post ${postId} from event ${eventId}`)
   return reply.status(204).send()
 }
