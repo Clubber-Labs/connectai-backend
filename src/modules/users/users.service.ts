@@ -45,9 +45,12 @@ export async function searchUsers(
 
     // Privacy gate: privado sem follow ACCEPTED só expõe card mínimo,
     // sem bio/counts/createdAt. O próprio viewer sempre vê seu shape completo.
+    // `kind` é tag discriminante explícita pra o client distinguir as variantes
+    // sem heurística (presença/ausência de campos opcionais).
     const hidePrivate = u.isPrivate && !isSelf && followStatus !== 'ACCEPTED'
     if (hidePrivate) {
       return {
+        kind: 'reduced' as const,
         id: u.id,
         username: u.username,
         name: u.name,
@@ -58,7 +61,7 @@ export async function searchUsers(
       }
     }
 
-    return { ...u, followStatus }
+    return { kind: 'full' as const, ...u, followStatus }
   })
 
   return { data, nextCursor }
