@@ -439,7 +439,7 @@ describe('GET /users/search', () => {
     expect(body2.nextCursor).toBe(null)
   })
 
-  it('retorna shape completo para usuário público', async () => {
+  it('retorna shape completo (kind=full) para usuário público', async () => {
     const viewer = await makeUser()
     await makeUser({ username: 'public_user', isPrivate: false })
 
@@ -452,6 +452,7 @@ describe('GET /users/search', () => {
       .json()
       .data.find((u: { username: string }) => u.username === 'public_user')
     expect(found).toBeDefined()
+    expect(found.kind).toBe('full')
     expect(found).toHaveProperty('bio')
     expect(found).toHaveProperty('followersCount')
     expect(found).toHaveProperty('followingCount')
@@ -459,7 +460,7 @@ describe('GET /users/search', () => {
     expect(found.isPrivate).toBe(false)
   })
 
-  it('retorna shape reduzido para privado sem follow', async () => {
+  it('retorna shape reduzido (kind=reduced) para privado sem follow', async () => {
     const viewer = await makeUser()
     await makeUser({ username: 'private_user', isPrivate: true })
 
@@ -472,6 +473,7 @@ describe('GET /users/search', () => {
       .json()
       .data.find((u: { username: string }) => u.username === 'private_user')
     expect(found).toBeDefined()
+    expect(found.kind).toBe('reduced')
     expect(found.isPrivate).toBe(true)
     expect(found.followStatus).toBe(null)
     expect(found).not.toHaveProperty('bio')
@@ -480,7 +482,7 @@ describe('GET /users/search', () => {
     expect(found).not.toHaveProperty('createdAt')
   })
 
-  it('retorna shape reduzido para privado com follow PENDING', async () => {
+  it('retorna shape reduzido (kind=reduced) para privado com follow PENDING', async () => {
     const viewer = await makeUser()
     const target = await makeUser({
       username: 'pending_priv',
@@ -496,12 +498,13 @@ describe('GET /users/search', () => {
     const found = res
       .json()
       .data.find((u: { username: string }) => u.username === 'pending_priv')
+    expect(found.kind).toBe('reduced')
     expect(found.followStatus).toBe('PENDING')
     expect(found).not.toHaveProperty('bio')
     expect(found).not.toHaveProperty('followersCount')
   })
 
-  it('retorna shape completo para privado com follow ACCEPTED', async () => {
+  it('retorna shape completo (kind=full) para privado com follow ACCEPTED', async () => {
     const viewer = await makeUser()
     const target = await makeUser({
       username: 'accepted_priv',
@@ -517,13 +520,14 @@ describe('GET /users/search', () => {
     const found = res
       .json()
       .data.find((u: { username: string }) => u.username === 'accepted_priv')
+    expect(found.kind).toBe('full')
     expect(found.followStatus).toBe('ACCEPTED')
     expect(found.isPrivate).toBe(true)
     expect(found).toHaveProperty('bio')
     expect(found).toHaveProperty('followersCount')
   })
 
-  it('o próprio viewer aparece com followStatus null', async () => {
+  it('o próprio viewer aparece com followStatus null e kind=full', async () => {
     const viewer = await makeUser({ username: 'self_finder' })
 
     const res = await app.inject({
@@ -535,7 +539,45 @@ describe('GET /users/search', () => {
       .json()
       .data.find((u: { id: string }) => u.id === viewer.id)
     expect(found).toBeDefined()
+    expect(found.kind).toBe('full')
     expect(found.followStatus).toBe(null)
+  })
+
+  it('o próprio viewer privado também aparece com kind=full', async () => {
+    const viewer = await makeUser({
+      username: 'self_priv',
+      isPrivate: true,
+    })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/users/search?q=self_priv',
+      headers: { authorization: `Bearer ${token(app, viewer.id)}` },
+    })
+    const found = res
+      .json()
+      .data.find((u: { id: string }) => u.id === viewer.id)
+    expect(found).toBeDefined()
+    expect(found.kind).toBe('full')
+    expect(found).toHaveProperty('bio')
+  })
+
+  it('todo item de data tem kind como discriminante', async () => {
+    const viewer = await makeUser()
+    await makeUser({ username: 'mix_pub', isPrivate: false })
+    await makeUser({ username: 'mix_priv', isPrivate: true })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/users/search?q=mix_',
+      headers: { authorization: `Bearer ${token(app, viewer.id)}` },
+    })
+    expect(res.statusCode).toBe(200)
+    const items = res.json().data as Array<{ kind: string }>
+    expect(items.length).toBeGreaterThan(0)
+    for (const item of items) {
+      expect(['full', 'reduced']).toContain(item.kind)
+    }
   })
 })
 
