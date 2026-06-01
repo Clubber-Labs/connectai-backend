@@ -28,10 +28,15 @@ export const participantParamSchema = z.object({
 
 export const sendMessageSchema = z.object({
   content: z.string().min(1, 'Mensagem vazia').max(2000),
+  replyToId: z.uuid().optional(),
 })
 
 export const editMessageSchema = z.object({
   content: z.string().trim().min(1, 'Mensagem vazia').max(2000),
+})
+
+export const messageReactionSchema = z.object({
+  emoji: z.string().min(1).max(16),
 })
 
 export const renameConversationSchema = z.object({
@@ -57,6 +62,7 @@ export type MessageParam = z.infer<typeof messageParamSchema>
 export type ParticipantParam = z.infer<typeof participantParamSchema>
 export type SendMessageBody = z.infer<typeof sendMessageSchema>
 export type EditMessageBody = z.infer<typeof editMessageSchema>
+export type MessageReactionBody = z.infer<typeof messageReactionSchema>
 export type RenameConversationBody = z.infer<typeof renameConversationSchema>
 export type AddParticipantBody = z.infer<typeof addParticipantSchema>
 export type SetRoleBody = z.infer<typeof setRoleSchema>

@@ -760,3 +760,357 @@ describe('PATCH editar mensagem (mudança 3)', () => {
     expect(res.statusCode).toBe(404)
   })
 })
+
+describe('recibos entregue/visto', () => {
+  it('POST /delivered marca lastDeliveredAt do participante (204)', async () => {
+    const a = await makeUser()
+    const b = await makeUser()
+    const convo = await makeDirectConversation(a.id, b.id)
+    await makeMessage(convo.id, a.id, { content: 'oi' })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/conversations/${convo.id}/delivered`,
+      headers: auth(b.id),
+    })
+    expect(res.statusCode).toBe(204)
+
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/conversations/${convo.id}`,
+      headers: auth(b.id),
+    })
+    const partB = detail
+      .json()
+      .participants.find((p: { userId: string }) => p.userId === b.id)
+    expect(partB.lastDeliveredAt).not.toBeNull()
+    expect(partB.lastReadAt).toBeNull()
+  })
+
+  it('marcar como lida também avança lastDeliveredAt', async () => {
+    const a = await makeUser()
+    const b = await makeUser()
+    const convo = await makeDirectConversation(a.id, b.id)
+    await makeMessage(convo.id, a.id, { content: 'oi' })
+
+    await app.inject({
+      method: 'POST',
+      url: `/conversations/${convo.id}/read`,
+      headers: auth(b.id),
+    })
+
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/conversations/${convo.id}`,
+      headers: auth(b.id),
+    })
+    const partB = detail
+      .json()
+      .participants.find((p: { userId: string }) => p.userId === b.id)
+    expect(partB.lastReadAt).not.toBeNull()
+    expect(partB.lastDeliveredAt).not.toBeNull()
+  })
+
+  it('401 sem autenticação no /delivered', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/conversations/${crypto.randomUUID()}/delivered`,
+    })
+    expect(res.statusCode).toBe(401)
+  })
+})
+
+describe('reply / citar mensagem', () => {
+  it('responde a uma mensagem incluindo replyTo no payload', async () => {
+    const a = await makeUser()
+    const b = await makeUser()
+    const convo = await makeDirectConversation(a.id, b.id)
+    const original = await makeMessage(convo.id, a.id, { content: 'pergunta' })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/conversations/${convo.id}/messages`,
+      headers: auth(b.id),
+      body: { content: 'resposta', replyToId: original.id },
+    })
+    expect(res.statusCode).toBe(201)
+    expect(res.json().replyToId).toBe(original.id)
+    expect(res.json().replyTo).toMatchObject({
+      id: original.id,
+      content: 'pergunta',
+    })
+  })
+
+  it('400 ao citar mensagem de outra conversa', async () => {
+    const a = await makeUser()
+    const b = await makeUser()
+    const c = await makeUser()
+    const convo1 = await makeDirectConversation(a.id, b.id)
+    const convo2 = await makeDirectConversation(a.id, c.id)
+    const alheia = await makeMessage(convo2.id, a.id, { content: 'de outra' })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/conversations/${convo1.id}/messages`,
+      headers: auth(a.id),
+      body: { content: 'tentando', replyToId: alheia.id },
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('preview do reply some quando a original é apagada (tombstone)', async () => {
+    const a = await makeUser()
+    const b = await makeUser()
+    const convo = await makeDirectConversation(a.id, b.id)
+    const original = await makeMessage(convo.id, a.id, {
+      content: 'apagar depois',
+    })
+    await app.inject({
+      method: 'POST',
+      url: `/conversations/${convo.id}/messages`,
+      headers: auth(b.id),
+      body: { content: 'resposta', replyToId: original.id },
+    })
+    await app.inject({
+      method: 'DELETE',
+      url: `/conversations/${convo.id}/messages/${original.id}`,
+      headers: auth(a.id),
+    })
+
+    const history = await app.inject({
+      method: 'GET',
+      url: `/conversations/${convo.id}/messages`,
+      headers: auth(b.id),
+    })
+    const reply = history
+      .json()
+      .data.find(
+        (m: { replyToId: string | null }) => m.replyToId === original.id,
+      )
+    expect(reply.replyTo.content).toBeNull()
+    expect(reply.replyTo.deletedAt).not.toBeNull()
+  })
+})
+
+describe('reações em mensagem', () => {
+  it('adiciona reação (201), aparece na lista e é idempotente', async () => {
+    const a = await makeUser()
+    const b = await makeUser()
+    const convo = await makeDirectConversation(a.id, b.id)
+    const msg = await makeMessage(convo.id, a.id, { content: 'curtir' })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/conversations/${convo.id}/messages/${msg.id}/reactions`,
+      headers: auth(b.id),
+      body: { emoji: '👍' },
+    })
+    expect(res.statusCode).toBe(201)
+    expect(res.json().reactions).toContainEqual({ userId: b.id, emoji: '👍' })
+
+    const again = await app.inject({
+      method: 'POST',
+      url: `/conversations/${convo.id}/messages/${msg.id}/reactions`,
+      headers: auth(b.id),
+      body: { emoji: '👍' },
+    })
+    expect(again.statusCode).toBe(201)
+    expect(
+      again.json().reactions.filter((r: { emoji: string }) => r.emoji === '👍'),
+    ).toHaveLength(1)
+  })
+
+  it('remove reação', async () => {
+    const a = await makeUser()
+    const b = await makeUser()
+    const convo = await makeDirectConversation(a.id, b.id)
+    const msg = await makeMessage(convo.id, a.id, { content: 'curtir' })
+    await app.inject({
+      method: 'POST',
+      url: `/conversations/${convo.id}/messages/${msg.id}/reactions`,
+      headers: auth(b.id),
+      body: { emoji: '👍' },
+    })
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/conversations/${convo.id}/messages/${msg.id}/reactions`,
+      headers: auth(b.id),
+      body: { emoji: '👍' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().reactions).not.toContainEqual({
+      userId: b.id,
+      emoji: '👍',
+    })
+  })
+
+  it('403 ao reagir como não-participante', async () => {
+    const a = await makeUser()
+    const b = await makeUser()
+    const stranger = await makeUser()
+    const convo = await makeDirectConversation(a.id, b.id)
+    const msg = await makeMessage(convo.id, a.id, { content: 'x' })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/conversations/${convo.id}/messages/${msg.id}/reactions`,
+      headers: auth(stranger.id),
+      body: { emoji: '👍' },
+    })
+    expect(res.statusCode).toBe(403)
+  })
+
+  it('404 ao reagir em mensagem inexistente', async () => {
+    const a = await makeUser()
+    const b = await makeUser()
+    const convo = await makeDirectConversation(a.id, b.id)
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/conversations/${convo.id}/messages/${crypto.randomUUID()}/reactions`,
+      headers: auth(a.id),
+      body: { emoji: '👍' },
+    })
+    expect(res.statusCode).toBe(404)
+  })
+})
+
+describe('mensagens de sistema em grupo', () => {
+  it('adicionar participante gera mensagem SYSTEM', async () => {
+    const owner = await makeUser()
+    const newcomer = await makeUser()
+    const group = await makeGroupConversation(owner.id, [])
+
+    await app.inject({
+      method: 'POST',
+      url: `/conversations/${group.id}/participants`,
+      headers: auth(owner.id),
+      body: { userId: newcomer.id },
+    })
+
+    const history = await app.inject({
+      method: 'GET',
+      url: `/conversations/${group.id}/messages`,
+      headers: auth(owner.id),
+    })
+    const sys = history
+      .json()
+      .data.find((m: { type: string }) => m.type === 'SYSTEM')
+    expect(sys).toBeDefined()
+    expect(sys.content).toContain('adicionou')
+  })
+
+  it('renomear o grupo gera mensagem SYSTEM', async () => {
+    const owner = await makeUser()
+    const member = await makeUser()
+    const group = await makeGroupConversation(owner.id, [member.id])
+
+    await app.inject({
+      method: 'PATCH',
+      url: `/conversations/${group.id}`,
+      headers: auth(owner.id),
+      body: { title: 'Renomeado' },
+    })
+
+    const history = await app.inject({
+      method: 'GET',
+      url: `/conversations/${group.id}/messages`,
+      headers: auth(member.id),
+    })
+    const sys = history
+      .json()
+      .data.find((m: { type: string }) => m.type === 'SYSTEM')
+    expect(sys).toBeDefined()
+    expect(sys.content).toContain('nome do grupo')
+  })
+
+  it('sair do grupo gera mensagem SYSTEM', async () => {
+    const owner = await makeUser()
+    const member = await makeUser()
+    const group = await makeGroupConversation(owner.id, [member.id])
+
+    await app.inject({
+      method: 'POST',
+      url: `/conversations/${group.id}/leave`,
+      headers: auth(member.id),
+    })
+
+    const history = await app.inject({
+      method: 'GET',
+      url: `/conversations/${group.id}/messages`,
+      headers: auth(owner.id),
+    })
+    const sys = history
+      .json()
+      .data.find((m: { type: string }) => m.type === 'SYSTEM')
+    expect(sys).toBeDefined()
+    expect(sys.content).toContain('saiu do grupo')
+  })
+
+  it('mensagem SYSTEM não conta como não-lida', async () => {
+    const owner = await makeUser()
+    const member = await makeUser()
+    const group = await makeGroupConversation(owner.id, [member.id])
+
+    await app.inject({
+      method: 'PATCH',
+      url: `/conversations/${group.id}`,
+      headers: auth(owner.id),
+      body: { title: 'Renomeado' },
+    })
+
+    const inbox = await app.inject({
+      method: 'GET',
+      url: '/conversations',
+      headers: auth(member.id),
+    })
+    const item = inbox
+      .json()
+      .data.find((c: { id: string }) => c.id === group.id)
+    expect(item.unreadCount).toBe(0)
+  })
+
+  it('403 ao editar/apagar/reagir mensagem SYSTEM', async () => {
+    const owner = await makeUser()
+    const newcomer = await makeUser()
+    const group = await makeGroupConversation(owner.id, [])
+    await app.inject({
+      method: 'POST',
+      url: `/conversations/${group.id}/participants`,
+      headers: auth(owner.id),
+      body: { userId: newcomer.id },
+    })
+    const history = await app.inject({
+      method: 'GET',
+      url: `/conversations/${group.id}/messages`,
+      headers: auth(owner.id),
+    })
+    const sys = history
+      .json()
+      .data.find((m: { type: string }) => m.type === 'SYSTEM')
+
+    const edit = await app.inject({
+      method: 'PATCH',
+      url: `/conversations/${group.id}/messages/${sys.id}`,
+      headers: auth(owner.id),
+      body: { content: 'hack' },
+    })
+    expect(edit.statusCode).toBe(403)
+
+    const del = await app.inject({
+      method: 'DELETE',
+      url: `/conversations/${group.id}/messages/${sys.id}`,
+      headers: auth(owner.id),
+    })
+    expect(del.statusCode).toBe(403)
+
+    const react = await app.inject({
+      method: 'POST',
+      url: `/conversations/${group.id}/messages/${sys.id}/reactions`,
+      headers: auth(owner.id),
+      body: { emoji: '👍' },
+    })
+    expect(react.statusCode).toBe(403)
+  })
+})

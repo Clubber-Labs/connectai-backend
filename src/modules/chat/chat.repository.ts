@@ -15,6 +15,16 @@ const messageInclude = {
     orderBy: { order: 'asc' as const },
     select: { id: true, url: true, format: true, size: true, order: true },
   },
+  reactions: { select: { userId: true, emoji: true } },
+  replyTo: {
+    select: {
+      id: true,
+      senderId: true,
+      content: true,
+      deletedAt: true,
+      sender: { select: userSelect },
+    },
+  },
 } as const
 
 /** Chave determinística do par DIRECT (uuids ordenados). */
@@ -162,10 +172,11 @@ export async function createTextMessage(
   conversationId: string,
   senderId: string,
   content: string,
+  replyToId?: string,
 ) {
   const [message] = await prisma.$transaction([
     prisma.message.create({
-      data: { conversationId, senderId, content },
+      data: { conversationId, senderId, content, replyToId: replyToId ?? null },
       include: messageInclude,
     }),
     prisma.conversation.update({
@@ -231,16 +242,74 @@ export async function findMessageById(id: string) {
       id: true,
       conversationId: true,
       senderId: true,
+      type: true,
       content: true,
       deletedAt: true,
     },
   })
 }
 
+/**
+ * Cria uma mensagem de sistema (entrou/saiu/renomeou) atribuída ao ator que
+ * disparou a ação. Mesmo padrão das mensagens normais: bumpa lastMessageAt e
+ * reabre a conversa pra quem a tinha ocultado.
+ */
+export async function createSystemMessage(
+  conversationId: string,
+  actorId: string,
+  content: string,
+) {
+  const [message] = await prisma.$transaction([
+    prisma.message.create({
+      data: { conversationId, senderId: actorId, content, type: 'SYSTEM' },
+      include: messageInclude,
+    }),
+    prisma.conversation.update({
+      where: { id: conversationId },
+      data: { lastMessageAt: new Date() },
+    }),
+    prisma.conversationParticipant.updateMany({
+      where: { conversationId, clearedAt: { not: null } },
+      data: { clearedAt: null },
+    }),
+  ])
+  return message
+}
+
 export async function editMessageContent(id: string, content: string) {
   return prisma.message.update({
     where: { id },
     data: { content, editedAt: new Date() },
+    include: messageInclude,
+  })
+}
+
+export async function addMessageReaction(
+  messageId: string,
+  userId: string,
+  emoji: string,
+) {
+  // Idempotente: re-reagir com o mesmo emoji não duplica nem falha.
+  await prisma.messageReaction.upsert({
+    where: { messageId_userId_emoji: { messageId, userId, emoji } },
+    update: {},
+    create: { messageId, userId, emoji },
+  })
+}
+
+export async function removeMessageReaction(
+  messageId: string,
+  userId: string,
+  emoji: string,
+) {
+  await prisma.messageReaction.deleteMany({
+    where: { messageId, userId, emoji },
+  })
+}
+
+export async function findMessageWithConversation(id: string) {
+  return prisma.message.findUnique({
+    where: { id },
     include: messageInclude,
   })
 }
@@ -267,9 +336,21 @@ export async function markConversationRead(
   conversationId: string,
   userId: string,
 ) {
+  const now = new Date()
+  // Quem lê também recebeu: avança lastDeliveredAt junto (read implica delivered).
   return prisma.conversationParticipant.updateMany({
     where: { conversationId, userId },
-    data: { lastReadAt: new Date() },
+    data: { lastReadAt: now, lastDeliveredAt: now },
+  })
+}
+
+export async function markConversationDelivered(
+  conversationId: string,
+  userId: string,
+) {
+  return prisma.conversationParticipant.updateMany({
+    where: { conversationId, userId },
+    data: { lastDeliveredAt: new Date() },
   })
 }
 
@@ -326,6 +407,7 @@ export async function unreadCounts(
       WHERE m."conversationId" IN (${Prisma.join(conversationIds)})
         AND m."senderId" <> ${userId}
         AND m."deletedAt" IS NULL
+        AND m."type" <> 'SYSTEM'
         AND (p."lastReadAt" IS NULL OR m."createdAt" > p."lastReadAt")
       GROUP BY m."conversationId"
     `,

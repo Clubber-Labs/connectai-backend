@@ -7,6 +7,7 @@ import {
 import {
   deleteConversation,
   deleteMessageHandler,
+  deleteMessageReaction,
   deleteParticipant,
   getConversationDetail,
   getConversations,
@@ -15,9 +16,11 @@ import {
   patchMessage,
   patchParticipantRole,
   postConversation,
+  postDelivered,
   postLeave,
   postMessage,
   postMessageImage,
+  postMessageReaction,
   postParticipant,
   postRead,
 } from './chat.controller'
@@ -27,6 +30,7 @@ import {
   createConversationSchema,
   editMessageSchema,
   messageParamSchema,
+  messageReactionSchema,
   paginationSchema,
   participantParamSchema,
   renameConversationSchema,
@@ -130,6 +134,15 @@ export async function chatRoutes(app: FastifyInstance) {
     postRead,
   )
 
+  api.post(
+    '/conversations/:id/delivered',
+    {
+      schema: { params: conversationParamSchema },
+      onRequest: [app.authenticate],
+    },
+    postDelivered,
+  )
+
   api.patch(
     '/conversations/:id/messages/:messageId',
     {
@@ -147,6 +160,25 @@ export async function chatRoutes(app: FastifyInstance) {
       onRequest: [app.authenticate],
     },
     deleteMessageHandler,
+  )
+
+  api.post(
+    '/conversations/:id/messages/:messageId/reactions',
+    {
+      schema: { params: messageParamSchema, body: messageReactionSchema },
+      onRequest: [app.authenticate],
+      config: { rateLimit: { max: 120, timeWindow: '1 minute' } },
+    },
+    postMessageReaction,
+  )
+
+  api.delete(
+    '/conversations/:id/messages/:messageId/reactions',
+    {
+      schema: { params: messageParamSchema, body: messageReactionSchema },
+      onRequest: [app.authenticate],
+    },
+    deleteMessageReaction,
   )
 
   api.post(
