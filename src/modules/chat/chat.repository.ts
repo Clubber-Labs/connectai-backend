@@ -138,6 +138,30 @@ export async function findActiveParticipantUserIds(conversationId: string) {
   return rows.map((r) => r.userId)
 }
 
+/** Usuários que compartilham alguma conversa ativa com `userId` (para presença). */
+export async function findConversationPartnerIds(userId: string) {
+  const rows = await prisma.$queryRaw<{ userid: string }[]>(
+    Prisma.sql`
+      SELECT DISTINCT p2."userId" AS userid
+      FROM conversation_participants p1
+      JOIN conversation_participants p2
+        ON p1."conversationId" = p2."conversationId"
+      WHERE p1."userId" = ${userId}
+        AND p1."leftAt" IS NULL
+        AND p2."leftAt" IS NULL
+        AND p2."userId" <> ${userId}
+    `,
+  )
+  return rows.map((r) => r.userid)
+}
+
+/** Marca o usuário como "visto agora" (presença/last-seen); retorna o instante. */
+export async function touchLastSeen(userId: string) {
+  const now = new Date()
+  await prisma.user.update({ where: { id: userId }, data: { lastSeenAt: now } })
+  return now
+}
+
 export async function listInboxConversations(
   userId: string,
   limit: number,

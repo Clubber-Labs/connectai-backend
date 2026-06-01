@@ -153,6 +153,21 @@ async function publishMessage(
   message: MessageRow,
 ) {
   await realtime.publish({
+    type: 'message',
+    conversationId,
+    participantIds,
+    message: shapeMessage(message),
+  })
+}
+
+/** Entrega ao vivo de uma mensagem alterada (edição ou reação). Best-effort. */
+async function publishEditedMessage(
+  conversationId: string,
+  message: MessageRow,
+) {
+  const participantIds = await findActiveParticipantUserIds(conversationId)
+  await realtime.publish({
+    type: 'message_edited',
     conversationId,
     participantIds,
     message: shapeMessage(message),
@@ -374,6 +389,7 @@ export async function editMessage(
     }
   }
   const updated = await editMessageContent(messageId, content)
+  await publishEditedMessage(conversationId, updated)
   return shapeMessage(updated)
 }
 
@@ -413,6 +429,7 @@ export async function reactToMessage(
   if (!updated) {
     throw { statusCode: 404, message: 'Mensagem não encontrada' }
   }
+  await publishEditedMessage(conversationId, updated)
   return shapeMessage(updated)
 }
 
@@ -429,6 +446,7 @@ export async function removeReaction(
   if (!updated) {
     throw { statusCode: 404, message: 'Mensagem não encontrada' }
   }
+  await publishEditedMessage(conversationId, updated)
   return shapeMessage(updated)
 }
 
