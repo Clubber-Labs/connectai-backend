@@ -280,3 +280,37 @@ describe('DELETE /posts/:postId/comments/:commentId', () => {
     expect(res.statusCode).toBe(204)
   })
 })
+
+describe('GET /posts/:postId/comments', () => {
+  it('reflete a reação do viewer em userLiked após reagir (read-after-write)', async () => {
+    const user = await makeUser()
+    const event = await makeEvent(user.id)
+    await makeAttendance(user.id, event.id, 'CONFIRMED')
+    const post = await makePost(app, user.id, event.id)
+
+    const created = await app.inject({
+      method: 'POST',
+      url: `/posts/${post.id}/comments`,
+      headers: { authorization: `Bearer ${token(app, user.id)}` },
+      body: { content: 'Comentário curtível' },
+    })
+    const commentId = created.json().id
+
+    await app.inject({
+      method: 'POST',
+      url: `/comments/${commentId}/reactions`,
+      headers: { authorization: `Bearer ${token(app, user.id)}` },
+    })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/posts/${post.id}/comments`,
+      headers: { authorization: `Bearer ${token(app, user.id)}` },
+    })
+    const comment = res
+      .json()
+      .data.find((c: { id: string }) => c.id === commentId)
+    expect(comment.userLiked).toBe(true)
+    expect(comment.reactionsCount).toBe(1)
+  })
+})
