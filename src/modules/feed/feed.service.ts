@@ -21,16 +21,25 @@ const POOL_MULTIPLIER = 5
 const POOL_FLOOR = 100
 const POOL_CAP = 300
 
-type FeedCursor = { score: number; id: string }
+// `t`: epoch (ms) do relógio de ranking, fixado na 1ª página e propagado nas
+// seguintes. O score depende de `now` (decay temporal, boost ONGOING/SOON); sem
+// congelar esse instante, cada página recalcula o score com um `now` diferente e
+// a fronteira do cursor passa a duplicar (ou sumir com) eventos. Opcional só por
+// retrocompatibilidade: cursores antigos sem `t` caem no relógio do request.
+type FeedCursor = { score: number; id: string; t?: number }
 
-function encodeCursor(c: FeedCursor): string {
+function encodeCursor(c: { score: number; id: string; t: number }): string {
   return Buffer.from(JSON.stringify(c)).toString('base64url')
 }
 
 function decodeCursor(raw: string): FeedCursor | null {
   try {
     const parsed = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'))
-    if (typeof parsed?.id === 'string' && typeof parsed?.score === 'number') {
+    if (
+      typeof parsed?.id === 'string' &&
+      typeof parsed?.score === 'number' &&
+      (parsed.t === undefined || typeof parsed.t === 'number')
+    ) {
       return parsed as FeedCursor
     }
     return null
@@ -69,7 +78,22 @@ export async function getFeed(userId: string, query: FeedQuery) {
 }
 
 async function buildFeedResult(userId: string, query: FeedQuery) {
+  // Decodifica o cursor ANTES de tudo: ele marca a fronteira (score, id) e
+  // carrega o relógio de ranking (t) definido na 1ª página.
+  const decoded = query.cursor ? decodeCursor(query.cursor) : null
+  if (query.cursor && !decoded) return { data: [], nextCursor: null }
+
+  // `now` real do servidor — usado em ELEGIBILIDADE (lifecycle/WHERE) e no
+  // status retornado. NUNCA vem do cursor: o `t` é cliente-controlável; se
+  // entrasse no WHERE de lifecycle, um cursor forjado burlaria o filtro `status`
+  // (ex.: `t` antigo + status=UPCOMING devolveria eventos hoje PAST).
   const now = new Date()
+  // `scoringNow` — relógio de RANKING, congelado na 1ª página e propagado via
+  // cursor. O score depende do tempo (decay temporal, boost ONGOING/SOON);
+  // congelá-lo mantém a fronteira do keyset estável entre as páginas. Forjar `t`
+  // só reordena o feed do próprio requester — não muda quais linhas o banco
+  // retorna nem o status exibido.
+  const scoringNow = decoded?.t !== undefined ? new Date(decoded.t) : now
   const center: LatLng | null =
     query.nearLat !== undefined && query.nearLng !== undefined
       ? { latitude: query.nearLat, longitude: query.nearLng }
@@ -125,7 +149,7 @@ async function buildFeedResult(userId: string, query: FeedQuery) {
           friendInteractionCount: friendCounts.get(event.id) ?? 0,
         },
         DEFAULT_RANK_WEIGHTS,
-        now,
+        scoringNow,
       ),
     }))
     .sort((a, b) => b.score - a.score || b.event.id.localeCompare(a.event.id))
@@ -134,9 +158,7 @@ async function buildFeedResult(userId: string, query: FeedQuery) {
   // critérios do cursor, então mudanças no pool entre páginas (TTL expirado,
   // evento removido) não quebram o scroll nem duplicam itens.
   let candidates = ranked
-  if (query.cursor) {
-    const decoded = decodeCursor(query.cursor)
-    if (!decoded) return { data: [], nextCursor: null }
+  if (decoded) {
     candidates = ranked.filter(
       (r) =>
         r.score < decoded.score ||
@@ -149,7 +171,11 @@ async function buildFeedResult(userId: string, query: FeedQuery) {
   const last = page[page.length - 1]
   const nextCursor =
     hasMore && last
-      ? encodeCursor({ score: last.score, id: last.event.id })
+      ? encodeCursor({
+          score: last.score,
+          id: last.event.id,
+          t: scoringNow.getTime(),
+        })
       : null
 
   return { data: page.map((r) => r.event), nextCursor }

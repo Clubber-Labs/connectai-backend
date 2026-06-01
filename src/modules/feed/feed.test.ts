@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { buildApp } from '../../test/app'
 import {
   makeAttendance,
@@ -611,6 +611,98 @@ describe('GET /feed — ranking', () => {
     const ids1 = body1.data.map((e: { id: string }) => e.id)
     const ids2 = body2.data.map((e: { id: string }) => e.id)
     expect(ids1.some((id: string) => ids2.includes(id))).toBe(false)
+  })
+
+  it('não repete eventos quando o relógio avança entre as páginas', async () => {
+    // O score é função de `now` (decay temporal). Se cada página recalcula com
+    // um `now` novo, a fronteira do cursor escorrega e eventos da página 1
+    // reaparecem na 2. Aqui congelamos o relógio só para forçar esse avanço.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const t1 = new Date('2026-06-01T12:00:00.000Z')
+      vi.setSystemTime(t1)
+
+      const viewer = await makeUser()
+
+      // 5 eventos PAST do próprio viewer, mesma data e categoria: o score só
+      // varia pelo engajamento (estável). O sinal temporal é idêntico entre
+      // eles e DECAI com o tempo — é o que move a fronteira do cursor.
+      const start = new Date(t1.getTime() - 6 * 60 * 60 * 1000)
+      const end = new Date(t1.getTime() - 2 * 60 * 60 * 1000)
+      for (let i = 0; i < 5; i++) {
+        const event = await makeEvent(viewer.id, {
+          isPublic: true,
+          category: 'PARTY',
+          date: start,
+          endDate: end,
+        })
+        await makeStrangerAttendees(event.id, i + 1)
+      }
+
+      const page1 = await app.inject({
+        method: 'GET',
+        url: '/feed?limit=2',
+        headers: { authorization: `Bearer ${token(app, viewer.id)}` },
+      })
+      const body1 = page1.json()
+      expect(body1.data.length).toBe(2)
+      expect(body1.nextCursor).toBeTruthy()
+
+      // 24h depois: os eventos PAST decaíram no ranking. Sem congelar o relógio
+      // no cursor, o filtro `score < cursor.score` deixa a página 1 vazar pra cá.
+      vi.setSystemTime(new Date(t1.getTime() + 24 * 60 * 60 * 1000))
+
+      const page2 = await app.inject({
+        method: 'GET',
+        url: `/feed?limit=2&cursor=${body1.nextCursor}`,
+        headers: { authorization: `Bearer ${token(app, viewer.id)}` },
+      })
+      const body2 = page2.json()
+
+      const ids1: string[] = body1.data.map((e: { id: string }) => e.id)
+      const ids2: string[] = body2.data.map((e: { id: string }) => e.id)
+      const all = [...ids1, ...ids2]
+      expect(new Set(all).size).toBe(all.length)
+      expect(ids1.some((id) => ids2.includes(id))).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('cursor com t forjado não burla o filtro de status (lifecycle usa o now real)', async () => {
+    const viewer = await makeUser()
+    // Evento PAST do viewer (não deveria aparecer sob status=UPCOMING).
+    const past = await makeEvent(viewer.id, {
+      isPublic: true,
+      date: new Date(Date.now() - 6 * 60 * 60 * 1000),
+      endDate: new Date(Date.now() - 2 * 60 * 60 * 1000),
+    })
+    const upcoming = await makeEvent(viewer.id, {
+      isPublic: true,
+      date: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
+    })
+
+    // Cursor forjado: t bem no passado faria o WHERE de lifecycle (se usasse o
+    // t do cursor) tratar o evento PAST como UPCOMING. score alto garante que o
+    // keyset não filtre ninguém.
+    const forged = Buffer.from(
+      JSON.stringify({
+        score: Number.MAX_SAFE_INTEGER,
+        id: '00000000-0000-0000-0000-000000000000',
+        t: new Date('2020-01-01T00:00:00.000Z').getTime(),
+      }),
+    ).toString('base64url')
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/feed?status=UPCOMING&cursor=${forged}`,
+      headers: { authorization: `Bearer ${token(app, viewer.id)}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const ids = res.json().data.map((e: { id: string }) => e.id)
+    expect(ids).not.toContain(past.id)
+    expect(ids).toContain(upcoming.id)
   })
 
   it('cursor inválido retorna página vazia em vez de duplicar', async () => {
