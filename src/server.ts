@@ -63,8 +63,10 @@ const app = fastify({
         target: 'pino-pretty',
         options: {
           colorize: true,
-          translateTime: 'HH:MM:ss',
-          ignore: 'pid,hostname',
+          translateTime: 'SYS:HH:MM:ss',
+          ignore: 'pid,hostname,reqId,module',
+          messageFormat: '{if module}[{module}] {end}{msg}',
+          singleLine: false,
         },
       },
     }),
