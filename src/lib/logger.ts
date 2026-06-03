@@ -35,6 +35,12 @@ export const logger = pino({
     remove: true,
   },
   serializers: {
+    err: (err: Error) => ({
+    type: err.constructor.name,
+    message: err.message,
+    stack: err.stack ?? '',
+    ...((err as { code?: string }).code && { code: (err as { code?: string }).code }),
+    }),
     req(request: {
       method: string
       url: string
