@@ -21,7 +21,7 @@ import {
 export async function getUsers(request: FastifyRequest, reply: FastifyReply) {
   const { limit, cursor } = request.query as ListUsersQuery
   const result = await listUsers(limit, cursor)
-  request.log.info({ userId: request.user.sub, limit, cursor }, 'Requested user list')
+  request.log.info({ userId: request.user?.sub, limit, cursor }, 'Requested user list')
   return reply.send(result)
 }
 
