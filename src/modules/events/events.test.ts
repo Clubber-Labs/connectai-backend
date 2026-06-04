@@ -991,6 +991,30 @@ describe('GET /metrics (instrumentação)', () => {
     expect(body).toMatch(/cache_misses_total\{namespace="events:public"\} 1/)
     expect(body).toMatch(/cache_hits_total\{namespace="events:public"\} 1/)
   })
+
+  it('exige Bearer quando METRICS_TOKEN está definido', async () => {
+    process.env.METRICS_TOKEN = 'segredo-metrics'
+    try {
+      const semHeader = await app.inject({ method: 'GET', url: '/metrics' })
+      expect(semHeader.statusCode).toBe(401)
+
+      const tokenErrado = await app.inject({
+        method: 'GET',
+        url: '/metrics',
+        headers: { authorization: 'Bearer errado' },
+      })
+      expect(tokenErrado.statusCode).toBe(401)
+
+      const ok = await app.inject({
+        method: 'GET',
+        url: '/metrics',
+        headers: { authorization: 'Bearer segredo-metrics' },
+      })
+      expect(ok.statusCode).toBe(200)
+    } finally {
+      delete process.env.METRICS_TOKEN
+    }
+  })
 })
 
 describe('GET /events/map', () => {

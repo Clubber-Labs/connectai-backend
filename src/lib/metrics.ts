@@ -127,9 +127,10 @@ export function renderMetrics(): string {
 }
 
 /**
- * Registra o hook de duração (onResponse) e a rota GET /metrics (sem auth —
- * exposição interna). Chamado por server.ts e test/app.ts ANTES das rotas pra
- * o hook capturar todas as respostas.
+ * Registra o hook de duração (onResponse) e a rota GET /metrics. Auth opcional
+ * via env `METRICS_TOKEN`: quando definida, exige `Authorization: Bearer <token>`
+ * — protege a rota em produção (expõe nomes de rota/status/latências/contadores
+ * de cache, "raio-X" operacional). Sem a env, fica aberta (dev/carga/test).
  */
 export function registerMetrics(app: FastifyInstance) {
   app.addHook('onResponse', async (request, reply) => {
@@ -137,7 +138,11 @@ export function registerMetrics(app: FastifyInstance) {
     recordHttp(route, reply.statusCode, reply.elapsedTime)
   })
 
-  app.get('/metrics', async (_request, reply) => {
+  app.get('/metrics', async (request, reply) => {
+    const token = process.env.METRICS_TOKEN
+    if (token && request.headers.authorization !== `Bearer ${token}`) {
+      return reply.status(401).send({ message: 'Não autorizado' })
+    }
     reply.header('content-type', 'text/plain; version=0.0.4')
     return renderMetrics()
   })
