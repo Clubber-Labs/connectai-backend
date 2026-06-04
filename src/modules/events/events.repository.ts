@@ -153,7 +153,7 @@ export async function findPublicEvents(
   cursor?: string,
   viewerId?: string,
   now: Date = new Date(),
-): Promise<SharedEvent[]> {
+): Promise<{ events: SharedEvent[]; nextCursor: string | null }> {
   let spatialIdFilter: string[] | undefined
 
   if (
@@ -174,10 +174,14 @@ export async function findPublicEvents(
       },
       viewerId,
     )
-    if (spatialIdFilter.length === 0) return []
+    if (spatialIdFilter.length === 0) return { events: [], nextCursor: null }
   }
 
-  const events = (await prisma.event.findMany({
+  // Busca limit+1 pra saber se há próxima página: gerar nextCursor só
+  // porque vieram `limit` resultados produz cursor falso (próxima página
+  // vazia) quando o total é exatamente `limit`. Espelha os repos
+  // findPublicEventsByDistance e findPublicEventsByPopularity.
+  const rows = (await prisma.event.findMany({
     where: {
       AND: [
         { isPublic: true },
@@ -203,13 +207,17 @@ export async function findPublicEvents(
           : []),
       ],
     },
-    take: limit,
+    take: limit + 1,
     ...(cursor && { skip: 1, cursor: { id: cursor } }),
     orderBy: [{ isFeatured: 'desc' }, { date: 'asc' }, { id: 'asc' }],
     include: buildSharedIncludes(),
   })) as unknown as PrismaSharedEvent[]
 
-  return events.map((e) => normalizeShared(e, now))
+  const hasMore = rows.length > limit
+  const pageRows = hasMore ? rows.slice(0, limit) : rows
+  const events = pageRows.map((e) => normalizeShared(e, now))
+  const nextCursor = hasMore ? pageRows[pageRows.length - 1].id : null
+  return { events, nextCursor }
 }
 
 /**

@@ -108,16 +108,12 @@ export async function listEvents(query: ListEventsQuery, viewerId?: string) {
       )
       shared = { data: events, nextCursor }
     } else {
-      const events = await findPublicEvents(
+      const { events, nextCursor } = await findPublicEvents(
         effectiveQuery,
         effectiveQuery.limit,
         effectiveQuery.cursor,
         viewerId,
       )
-      const nextCursor =
-        events.length === effectiveQuery.limit
-          ? events[events.length - 1].id
-          : null
       shared = { data: events, nextCursor }
     }
     await cache.set(cacheKey, shared, 60)
