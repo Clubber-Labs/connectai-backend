@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from '../../test/app'
@@ -9,6 +10,7 @@ import {
   makeMessage,
   makeUser,
 } from '../../test/factories'
+import { fakeStorage } from '../../test/fake-storage'
 import {
   multipartFormData,
   tinyM4aBuffer,
@@ -484,7 +486,11 @@ describe('anexo de imagem', () => {
 
     expect(res.statusCode).toBe(201)
     expect(res.json().attachments).toHaveLength(1)
-    expect(res.json().attachments[0].url).toMatch(/^https:\/\/fake\.storage\//)
+    const attachment = res.json().attachments[0]
+    expect(attachment.url).toMatch(/^https:\/\/fake\.storage\//)
+    // 1.4: imagem grava width/height (sharp) pro cliente reservar o aspect-ratio.
+    expect(attachment.width).toBeGreaterThan(0)
+    expect(attachment.height).toBeGreaterThan(0)
   })
 
   it('mimetype inválido → 400', async () => {
@@ -505,6 +511,50 @@ describe('anexo de imagem', () => {
       payload: body,
     })
     expect(res.statusCode).toBe(400)
+  })
+
+  it('1.5: GIF é rejeitado → 400 (não aceitamos GIF no chat)', async () => {
+    const a = await makeUser()
+    const b = await makeUser()
+    const convo = await makeDirectConversation(a.id, b.id)
+    const { body, contentType } = multipartFormData(
+      Buffer.from('GIF89a-fake-bytes'),
+      'image',
+      'meme.gif',
+      'image/gif',
+    )
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/conversations/${convo.id}/messages/images`,
+      headers: { ...auth(a.id), 'content-type': contentType },
+      payload: body,
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('1.6: imagem acima de 5 MB → 413 com mensagem em PT', async () => {
+    const a = await makeUser()
+    const b = await makeUser()
+    const convo = await makeDirectConversation(a.id, b.id)
+    // Excede o teto global do multipart (5 MB). O mimetype passa; o toBuffer
+    // estoura e o erro do @fastify/multipart é padronizado em PT no handler.
+    const big = Buffer.alloc(5 * 1024 * 1024 + 1024, 1)
+    const { body, contentType } = multipartFormData(
+      big,
+      'image',
+      'grande.png',
+      'image/png',
+    )
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/conversations/${convo.id}/messages/images`,
+      headers: { ...auth(a.id), 'content-type': contentType },
+      payload: body,
+    })
+    expect(res.statusCode).toBe(413)
+    expect(res.json().message).toMatch(/limite/i)
   })
 })
 
@@ -713,6 +763,308 @@ describe('anexo de áudio', () => {
       body: { content: 'tentando editar' },
     })
     expect(res.statusCode).toBe(403)
+  })
+
+  it('1.3/1.6: áudio acima de 5 MB → 413 PT e limpa o parcial', async () => {
+    const a = await makeUser()
+    const b = await makeUser()
+    const convo = await makeDirectConversation(a.id, b.id)
+    // Excede 5 MB: o busboy trunca o stream e marca `truncated`. O upload sobe em
+    // stream (sem buffer) e, ao ver o truncamento, remove o asset parcial e 413.
+    const big = Buffer.alloc(5 * 1024 * 1024 + 1024, 1)
+    const { body, contentType } = multipartFormData(
+      big,
+      'audio',
+      'nota.m4a',
+      'audio/mp4',
+      { durationMs: '3000' },
+    )
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/conversations/${convo.id}/messages/audio`,
+      headers: { ...auth(a.id), 'content-type': contentType },
+      payload: body,
+    })
+
+    expect(res.statusCode).toBe(413)
+    expect(res.json().message).toMatch(/limite/i)
+    // O parcial que subiu foi removido (não vira órfão pago).
+    expect(fakeStorage.deleted.length).toBeGreaterThanOrEqual(1)
+    // E nada foi persistido.
+    const count = await testPrisma.message.count({
+      where: { conversationId: convo.id },
+    })
+    expect(count).toBe(0)
+  })
+})
+
+describe('vídeo — upload direto assinado', () => {
+  describe('assinatura (POST /messages/video/signature)', () => {
+    it('gera assinatura travada na pasta da conversa', async () => {
+      const a = await makeUser()
+      const b = await makeUser()
+      const convo = await makeDirectConversation(a.id, b.id)
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/conversations/${convo.id}/messages/video/signature`,
+        headers: auth(a.id),
+      })
+
+      expect(res.statusCode).toBe(200)
+      const body = res.json()
+      expect(body.signature).toBeTruthy()
+      expect(body.timestamp).toBeTruthy()
+      expect(body.apiKey).toBeTruthy()
+      expect(body.cloudName).toBeTruthy()
+      expect(body.resourceType).toBe('video')
+      // A pasta é travada pelo backend na conversa — o cliente não a escolhe.
+      expect(body.folder).toBe(`conversations/${convo.id}`)
+    })
+
+    it('não-participante → 403', async () => {
+      const a = await makeUser()
+      const b = await makeUser()
+      const outsider = await makeUser()
+      const convo = await makeDirectConversation(a.id, b.id)
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/conversations/${convo.id}/messages/video/signature`,
+        headers: auth(outsider.id),
+      })
+      expect(res.statusCode).toBe(403)
+    })
+
+    it('sem autenticação → 401', async () => {
+      const a = await makeUser()
+      const b = await makeUser()
+      const convo = await makeDirectConversation(a.id, b.id)
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/conversations/${convo.id}/messages/video/signature`,
+      })
+      expect(res.statusCode).toBe(401)
+    })
+
+    it('conversa inexistente → 404', async () => {
+      const a = await makeUser()
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/conversations/${randomUUID()}/messages/video/signature`,
+        headers: auth(a.id),
+      })
+      expect(res.statusCode).toBe(404)
+    })
+  })
+
+  describe('criar mensagem (POST /messages/video)', () => {
+    it('cria a mensagem a partir do publicId verificado no provider', async () => {
+      const a = await makeUser()
+      const b = await makeUser()
+      const convo = await makeDirectConversation(a.id, b.id)
+      const publicId = `conversations/${convo.id}/${randomUUID()}`
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/conversations/${convo.id}/messages/video`,
+        headers: auth(a.id),
+        body: { publicId },
+      })
+
+      expect(res.statusCode).toBe(201)
+      const attachment = res.json().attachments[0]
+      expect(res.json().attachments).toHaveLength(1)
+      expect(attachment.kind).toBe('VIDEO')
+      // Metadados vêm do provider (fake), não do cliente.
+      expect(attachment.durationMs).toBe(8200)
+      expect(attachment.width).toBe(1080)
+      expect(attachment.height).toBe(1920)
+      expect(attachment.format).toBe('mp4')
+      expect(attachment.url).toMatch(/^https:\/\/fake\.storage\//)
+      // Thumbnail/poster derivado pelo provider para o preview do vídeo.
+      expect(attachment.thumbnailUrl).toMatch(/\.jpg$/)
+    })
+
+    it('publicId de outra conversa → 403', async () => {
+      const a = await makeUser()
+      const b = await makeUser()
+      const convo = await makeDirectConversation(a.id, b.id)
+      // publicId aponta para a pasta de OUTRA conversa.
+      const publicId = `conversations/${randomUUID()}/${randomUUID()}`
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/conversations/${convo.id}/messages/video`,
+        headers: auth(a.id),
+        body: { publicId },
+      })
+      expect(res.statusCode).toBe(403)
+    })
+
+    it('asset inexistente no provider → 400', async () => {
+      const a = await makeUser()
+      const b = await makeUser()
+      const convo = await makeDirectConversation(a.id, b.id)
+      const publicId = `conversations/${convo.id}/missing`
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/conversations/${convo.id}/messages/video`,
+        headers: auth(a.id),
+        body: { publicId },
+      })
+      expect(res.statusCode).toBe(400)
+    })
+
+    it('formato não suportado → 400', async () => {
+      const a = await makeUser()
+      const b = await makeUser()
+      const convo = await makeDirectConversation(a.id, b.id)
+      const publicId = `conversations/${convo.id}/badformat`
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/conversations/${convo.id}/messages/video`,
+        headers: auth(a.id),
+        body: { publicId },
+      })
+      expect(res.statusCode).toBe(400)
+    })
+
+    it('vídeo acima do limite → 413', async () => {
+      const a = await makeUser()
+      const b = await makeUser()
+      const convo = await makeDirectConversation(a.id, b.id)
+      const publicId = `conversations/${convo.id}/toobig`
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/conversations/${convo.id}/messages/video`,
+        headers: auth(a.id),
+        body: { publicId },
+      })
+      expect(res.statusCode).toBe(413)
+    })
+
+    it('não-participante → 403', async () => {
+      const a = await makeUser()
+      const b = await makeUser()
+      const outsider = await makeUser()
+      const convo = await makeDirectConversation(a.id, b.id)
+      const publicId = `conversations/${convo.id}/${randomUUID()}`
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/conversations/${convo.id}/messages/video`,
+        headers: auth(outsider.id),
+        body: { publicId },
+      })
+      expect(res.statusCode).toBe(403)
+    })
+
+    it('sem autenticação → 401', async () => {
+      const a = await makeUser()
+      const b = await makeUser()
+      const convo = await makeDirectConversation(a.id, b.id)
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/conversations/${convo.id}/messages/video`,
+        body: { publicId: `conversations/${convo.id}/${randomUUID()}` },
+      })
+      expect(res.statusCode).toBe(401)
+    })
+
+    it('publicId vazio → 400', async () => {
+      const a = await makeUser()
+      const b = await makeUser()
+      const convo = await makeDirectConversation(a.id, b.id)
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/conversations/${convo.id}/messages/video`,
+        headers: auth(a.id),
+        body: { publicId: '' },
+      })
+      expect(res.statusCode).toBe(400)
+    })
+
+    it('publicId só de espaços → 400 (trim no boundary)', async () => {
+      const a = await makeUser()
+      const b = await makeUser()
+      const convo = await makeDirectConversation(a.id, b.id)
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/conversations/${convo.id}/messages/video`,
+        headers: auth(a.id),
+        body: { publicId: '   ' },
+      })
+      expect(res.statusCode).toBe(400)
+    })
+
+    // Modo de pasta DINÂMICA do Cloudinary (padrão para contas novas): o
+    // public_id NÃO inclui o caminho; a pasta vem em asset_folder. O
+    // pertencimento depende do ramo `asset.folder === folder` — este teste
+    // falha se alguém removê-lo (a regressão que a revisão tentou introduzir).
+    it('aceita asset em pasta dinâmica (publicId sem caminho + asset_folder)', async () => {
+      const a = await makeUser()
+      const b = await makeUser()
+      const convo = await makeDirectConversation(a.id, b.id)
+      const publicId = `dyn::conversations/${convo.id}::${randomUUID()}`
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/conversations/${convo.id}/messages/video`,
+        headers: auth(a.id),
+        body: { publicId },
+      })
+
+      expect(res.statusCode).toBe(201)
+      expect(res.json().attachments[0].kind).toBe('VIDEO')
+    })
+
+    it('pasta dinâmica: asset_folder de outra conversa → 403', async () => {
+      const a = await makeUser()
+      const b = await makeUser()
+      const convo = await makeDirectConversation(a.id, b.id)
+      const publicId = `dyn::conversations/${randomUUID()}::${randomUUID()}`
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/conversations/${convo.id}/messages/video`,
+        headers: auth(a.id),
+        body: { publicId },
+      })
+      expect(res.statusCode).toBe(403)
+    })
+
+    it('mensagem só de vídeo não pode ser editada → 403', async () => {
+      const a = await makeUser()
+      const b = await makeUser()
+      const convo = await makeDirectConversation(a.id, b.id)
+      const publicId = `conversations/${convo.id}/${randomUUID()}`
+
+      const created = await app.inject({
+        method: 'POST',
+        url: `/conversations/${convo.id}/messages/video`,
+        headers: auth(a.id),
+        body: { publicId },
+      })
+      const messageId = created.json().id
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/conversations/${convo.id}/messages/${messageId}`,
+        headers: auth(a.id),
+        body: { content: 'tentando editar' },
+      })
+      expect(res.statusCode).toBe(403)
+    })
   })
 })
 
@@ -1380,5 +1732,103 @@ describe('validação de emoji na reação', () => {
       body: { emoji: 'x'.repeat(33) },
     })
     expect(res.statusCode).toBe(400)
+  })
+})
+
+describe('ciclo de vida de mídia (auditoria 1.1/1.2)', () => {
+  it('apagar mensagem de áudio remove o arquivo (resource_type video)', async () => {
+    const a = await makeUser()
+    const b = await makeUser()
+    const convo = await makeDirectConversation(a.id, b.id)
+    const { body, contentType } = multipartFormData(
+      tinyM4aBuffer(),
+      'audio',
+      'nota.m4a',
+      'audio/mp4',
+      { durationMs: '1000' },
+    )
+    const created = await app.inject({
+      method: 'POST',
+      url: `/conversations/${convo.id}/messages/audio`,
+      headers: { ...auth(a.id), 'content-type': contentType },
+      payload: body,
+    })
+    expect(created.statusCode).toBe(201)
+    const key = fakeStorage.uploads[0].key
+
+    const del = await app.inject({
+      method: 'DELETE',
+      url: `/conversations/${convo.id}/messages/${created.json().id}`,
+      headers: auth(a.id),
+    })
+    expect(del.statusCode).toBe(204)
+    // 1.1: áudio é resource_type 'video' no Cloudinary (destroy com tipo certo).
+    expect(fakeStorage.deletedResources).toContainEqual({
+      key,
+      resourceType: 'video',
+    })
+  })
+
+  it('apagar mensagem de imagem remove o arquivo (resource_type image)', async () => {
+    const a = await makeUser()
+    const b = await makeUser()
+    const convo = await makeDirectConversation(a.id, b.id)
+    const png = await tinyPngBuffer()
+    const { body, contentType } = multipartFormData(
+      png,
+      'image',
+      'foto.png',
+      'image/png',
+    )
+    const created = await app.inject({
+      method: 'POST',
+      url: `/conversations/${convo.id}/messages/images`,
+      headers: { ...auth(a.id), 'content-type': contentType },
+      payload: body,
+    })
+    const key = fakeStorage.uploads[0].key
+
+    const del = await app.inject({
+      method: 'DELETE',
+      url: `/conversations/${convo.id}/messages/${created.json().id}`,
+      headers: auth(a.id),
+    })
+    expect(del.statusCode).toBe(204)
+    expect(fakeStorage.deletedResources).toContainEqual({
+      key,
+      resourceType: 'image',
+    })
+  })
+
+  it('falha no insert pós-upload dispara delete compensatório', async () => {
+    const a = await makeUser()
+    const b = await makeUser()
+    const convo = await makeDirectConversation(a.id, b.id)
+    // O provider reporta um tamanho que estoura o int4 → o insert do attachment
+    // falha DEPOIS do upload, exercitando o caminho compensatório.
+    fakeStorage.forceOversizeBytes = true
+    const { body, contentType } = multipartFormData(
+      tinyM4aBuffer(),
+      'audio',
+      'nota.m4a',
+      'audio/mp4',
+      { durationMs: '1000' },
+    )
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/conversations/${convo.id}/messages/audio`,
+      headers: { ...auth(a.id), 'content-type': contentType },
+      payload: body,
+    })
+
+    expect(res.statusCode).toBeGreaterThanOrEqual(400)
+    // O asset que subiu foi removido (compensatório) e nada persistiu.
+    expect(fakeStorage.uploads).toHaveLength(1)
+    expect(fakeStorage.deleted).toContain(fakeStorage.uploads[0].key)
+    const count = await testPrisma.message.count({
+      where: { conversationId: convo.id },
+    })
+    expect(count).toBe(0)
   })
 })

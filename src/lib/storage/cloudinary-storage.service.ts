@@ -4,11 +4,19 @@ import type { CloudinaryCredentials } from '../env'
 import type {
   FileData,
   IStorageService,
+  RemoteAsset,
+  StorageResourceType,
+  StreamData,
+  StreamUploadResult,
   UploadResult,
+  UploadSignature,
 } from './storage.interface'
 
 export class CloudinaryStorageService implements IStorageService {
+  private readonly credentials: CloudinaryCredentials
+
   constructor(credentials: CloudinaryCredentials) {
+    this.credentials = credentials
     cloudinary.config({
       cloud_name: credentials.cloudName,
       api_key: credentials.apiKey,
@@ -45,7 +53,102 @@ export class CloudinaryStorageService implements IStorageService {
     })
   }
 
-  async delete(key: string): Promise<void> {
-    await cloudinary.uploader.destroy(key)
+  async uploadStream(
+    file: StreamData,
+    folderConfig: string,
+  ): Promise<StreamUploadResult> {
+    return new Promise((resolve, reject) => {
+      const publicId = `${folderConfig}/${randomUUID()}`
+      const dest = cloudinary.uploader.upload_stream(
+        { public_id: publicId, resource_type: 'auto' },
+        (error, result) => {
+          if (error || !result) {
+            return reject(
+              error || new Error('Falha no upload para o Cloudinary'),
+            )
+          }
+          resolve({
+            url: result.secure_url,
+            key: result.public_id,
+            bytes: result.bytes,
+          })
+        },
+      )
+      // Propaga erro do source pro destino (não deixa o upload pendurado).
+      file.stream.on('error', (err) => dest.destroy(err))
+      file.stream.pipe(dest)
+    })
+  }
+
+  async delete(
+    key: string,
+    resourceType: StorageResourceType = 'image',
+  ): Promise<void> {
+    await cloudinary.uploader.destroy(key, { resource_type: resourceType })
+  }
+
+  signUpload(folder: string, resourceType: 'video'): UploadSignature {
+    const timestamp = Math.round(Date.now() / 1000)
+    // Assina apenas folder + timestamp: o cliente envia exatamente esses params
+    // (mais api_key/file). Trava a pasta na conversa — o cliente não escolhe.
+    const signature = cloudinary.utils.api_sign_request(
+      { folder, timestamp },
+      this.credentials.apiSecret,
+    )
+    return {
+      signature,
+      timestamp,
+      apiKey: this.credentials.apiKey,
+      cloudName: this.credentials.cloudName,
+      folder,
+      resourceType,
+    }
+  }
+
+  async getAsset(
+    publicId: string,
+    resourceType: 'video',
+  ): Promise<RemoteAsset | null> {
+    try {
+      const r = await cloudinary.api.resource(publicId, {
+        resource_type: resourceType,
+      })
+      // Pastas dinâmicas reportam asset_folder; as fixas, folder. Fallback: deriva
+      // do public_id AUTORITATIVO do provider (r.public_id), nunca do publicId
+      // recebido do cliente — esse valor entra na verificação de pertencimento.
+      const folder =
+        r.asset_folder ??
+        r.folder ??
+        r.public_id.split('/').slice(0, -1).join('/')
+      // Poster gerado on-demand pelo Cloudinary: 1 frame representativo do vídeo
+      // entregue como JPEG. Não custa storage nem transcoding (URL derivada).
+      const thumbnailUrl = cloudinary.url(r.public_id, {
+        resource_type: 'video',
+        format: 'jpg',
+        transformation: [{ start_offset: 'auto' }],
+        // Explícito: cloudinary.url() pode ignorar o secure global em algumas
+        // versões e gerar http://. A URL fica persistida, então força https.
+        secure: true,
+      })
+      return {
+        publicId: r.public_id,
+        url: r.secure_url,
+        bytes: r.bytes,
+        format: r.format,
+        folder,
+        durationMs:
+          typeof r.duration === 'number' ? Math.round(r.duration * 1000) : null,
+        width: typeof r.width === 'number' ? r.width : null,
+        height: typeof r.height === 'number' ? r.height : null,
+        thumbnailUrl,
+      }
+    } catch (err) {
+      // Asset inexistente → 404 do Cloudinary vira null (o service trata como 400).
+      const httpCode =
+        (err as { error?: { http_code?: number }; http_code?: number })?.error
+          ?.http_code ?? (err as { http_code?: number })?.http_code
+      if (httpCode === 404) return null
+      throw err
+    }
   }
 }

@@ -113,7 +113,6 @@ model Conversation {
   createdById   String
   createdBy     User             @relation("conversationsCreated", fields: [createdById], references: [id])
   lastMessageAt DateTime?
-  // Chave determinística do par DIRECT (uuids ordenados e juntados). null em GROUP.
   directKey     String?          @unique
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
@@ -134,8 +133,6 @@ model ConversationParticipant {
   role            ParticipantRole @default(MEMBER)
   lastReadAt      DateTime?
   lastDeliveredAt DateTime?
-  // Conversa ocultada por este participante (estilo "apagar conversa"): some da
-  // lista dele; reaparece quando chega mensagem após o clearedAt.
   clearedAt       DateTime?
   joinedAt        DateTime        @default(now())
   leftAt          DateTime?
@@ -194,6 +191,7 @@ model MessageReaction {
 enum AttachmentKind {
   IMAGE
   AUDIO
+  VIDEO
 }
 
 model MessageAttachment {
@@ -205,10 +203,11 @@ model MessageAttachment {
   key       String
   format    String
   size      Int
-  // Áudio: duração da nota de voz e amplitudes pré-calculadas pelo cliente para
-  // desenhar a waveform sem baixar o arquivo. Ambos null/vazio em imagem.
   durationMs Int?
   waveform   Int[]
+  width      Int?
+  height     Int?
+  thumbnailUrl String?
   order      Int            @default(0)
   createdAt  DateTime       @default(now())
 
