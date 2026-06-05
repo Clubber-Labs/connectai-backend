@@ -25,6 +25,10 @@ export class FakeStorageService implements IStorageService {
   // range for type integer") → permite testar o delete compensatório sem mockar
   // o Prisma (a falha vem do banco real).
   forceOversizeBytes = false
+  // Seam de teste: simula o provider detectando que o conteúdo NÃO é mídia
+  // (ex.: o cliente mandou texto/HTML com Content-Type de áudio). O próximo
+  // uploadStream reporta esse resource_type detectado.
+  forceDetectedResourceType: StorageResourceType | null = null
 
   private nextKey(folderConfig: string, ext: string): string {
     return `${folderConfig}/${this.uploads.length + 1}${ext}`
@@ -57,11 +61,13 @@ export class FakeStorageService implements IStorageService {
       this.forceOversizeBytes = false
       bytes = 3_000_000_000
     }
+    const detectedResourceType = this.forceDetectedResourceType ?? 'video'
+    this.forceDetectedResourceType = null
     const ext = path.extname(file.filename) || '.bin'
     const key = this.nextKey(folderConfig, ext)
     const url = `https://fake.storage/${key}`
     this.uploads.push({ key, url, size: bytes, deliveryType })
-    return { key, url, bytes }
+    return { key, url, bytes, detectedResourceType }
   }
 
   // URL assinada determinística e reconhecível (marcador '/signed/'). Reflete o
@@ -144,6 +150,7 @@ export class FakeStorageService implements IStorageService {
     this.deleted = []
     this.deletedResources = []
     this.forceOversizeBytes = false
+    this.forceDetectedResourceType = null
   }
 }
 

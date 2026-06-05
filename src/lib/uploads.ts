@@ -135,6 +135,19 @@ export async function uploadMessageAudio(
     await deleteUploaded(result.key, logger, 'video')
     throw { statusCode: 413, message: FILE_TOO_LARGE_MESSAGE }
   }
+  // Validação por CONTEÚDO (não pelo Content-Type do cliente): o Cloudinary
+  // detecta o tipo real. Áudio/vídeo são 'video'; 'raw'/'image' = não é áudio.
+  // Fecha a lacuna de confiar no mimetype enviado (imagem já é validada pelo
+  // sharp; vídeo, pelo formato do getAsset).
+  if (result.detectedResourceType !== 'video') {
+    // Deleta com o tipo DETECTADO (ex.: 'raw'): destroy com o tipo errado não
+    // apaga o asset — o órfão ficaria pago no provider.
+    await deleteUploaded(result.key, logger, result.detectedResourceType)
+    throw {
+      statusCode: 400,
+      message: 'Conteúdo de áudio inválido: o arquivo não é um áudio',
+    }
+  }
   return { ...result, format, size: result.bytes }
 }
 

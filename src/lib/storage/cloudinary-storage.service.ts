@@ -79,6 +79,9 @@ export class CloudinaryStorageService implements IStorageService {
             url: result.secure_url,
             key: result.public_id,
             bytes: result.bytes,
+            // O que o Cloudinary detectou no conteúdo (resource_type 'auto'):
+            // 'image' | 'video' | 'raw'.
+            detectedResourceType: result.resource_type as StorageResourceType,
           })
         },
       )

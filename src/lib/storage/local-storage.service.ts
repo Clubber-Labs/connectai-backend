@@ -53,7 +53,14 @@ export class LocalStorageService implements IStorageService {
     // pipeline propaga erro/backpressure e fecha o arquivo ao final.
     await pipeline(file.stream, createWriteStream(target))
 
-    return { url: `${env.PUBLIC_URL}/uploads/${key}`, key, bytes }
+    // O filesystem local não detecta o tipo do conteúdo (dev). Assume 'video'
+    // (válido para áudio) — a validação por conteúdo só vale com Cloudinary.
+    return {
+      url: `${env.PUBLIC_URL}/uploads/${key}`,
+      key,
+      bytes,
+      detectedResourceType: 'video',
+    }
   }
 
   // resourceType não se aplica ao filesystem local — a key já é o caminho.
