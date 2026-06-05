@@ -130,7 +130,13 @@ function parseAudioMeta(fields: Record<string, unknown>): AudioMessageMeta {
   }
   const parsed = audioMessageMetaSchema.safeParse({ durationMs, waveform })
   if (!parsed.success) {
-    throw { statusCode: 400, message: 'Metadados de áudio inválidos' }
+    // Expõe a mensagem do primeiro campo inválido (PT, definidas no schema)
+    // em vez de um genérico — facilita o debug no cliente.
+    throw {
+      statusCode: 400,
+      message:
+        parsed.error.issues[0]?.message ?? 'Metadados de áudio inválidos',
+    }
   }
   return parsed.data
 }

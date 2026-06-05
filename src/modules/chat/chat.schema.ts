@@ -38,10 +38,16 @@ export const editMessageSchema = z.object({
 export const audioMessageMetaSchema = z.object({
   // Vêm como campos de texto do multipart: durationMs é string ("3200") e
   // waveform já é o array após JSON.parse no controller. max 10min de nota.
-  durationMs: z.coerce.number().int().positive().max(600_000),
+  durationMs: z.coerce
+    .number()
+    .int('Duração inválida')
+    .positive('Duração deve ser positiva')
+    .max(600_000, 'Duração máxima de 10 minutos (600000 ms)'),
   waveform: z
-    .array(z.coerce.number().int().min(0).max(255))
-    .max(512)
+    .array(
+      z.coerce.number().int('Waveform deve conter inteiros').min(0).max(255),
+    )
+    .max(512, 'Waveform muito grande (máx. 512 pontos)')
     .optional(),
 })
 
