@@ -442,6 +442,8 @@ const STORAGE_QUOTA_MESSAGE = 'Cota de armazenamento de mídia excedida'
  */
 async function assertQuotaAvailable(userId: string): Promise<void> {
   const used = await sumUserActiveMediaBytes(userId)
+  // `>=` (não `>`): aqui ainda não sabemos o tamanho do arquivo, então rejeita
+  // quem JÁ está no teto. O check autoritativo no lock usa `used + bytes > max`.
   if (used >= env.CHAT_USER_STORAGE_QUOTA_BYTES) {
     throw { statusCode: 413, message: STORAGE_QUOTA_MESSAGE }
   }

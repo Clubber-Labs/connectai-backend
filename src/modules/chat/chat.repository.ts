@@ -286,10 +286,11 @@ export async function createAttachmentMessage(
   additionalBytes: number,
 ) {
   return prisma.$transaction(async (tx) => {
-    // Lock por usuário, liberado no fim da transação (xact). hashtext mapeia o
-    // uuid do remetente para o int da chave do advisory lock. $executeRaw (não
-    // $queryRaw) porque a função retorna void e não há resultado a desserializar.
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${senderId}))`
+    // Lock por usuário, liberado no fim da transação (xact). Chave de 64 bits
+    // derivada do md5 do senderId — hashtext() seria só int4 (32 bits) e dois
+    // usuários distintos colidiriam (aniversário) serializando à toa. $executeRaw
+    // (não $queryRaw): a função retorna void, não há resultado a desserializar.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(('x' || md5(${senderId}))::bit(64)::bigint)`
     const agg = await tx.messageAttachment.aggregate({
       _sum: { size: true },
       where: { message: { senderId, deletedAt: null } },

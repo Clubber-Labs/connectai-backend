@@ -2270,6 +2270,35 @@ describe('cota de armazenamento por usuário (Fase 2 #6)', () => {
     expect(res.statusCode).toBe(201)
   })
 
+  it('vídeo: atinge a cota → 413 e remove o asset órfão do provider', async () => {
+    const a = await makeUser()
+    const b = await makeUser()
+    const convo = await makeDirectConversation(a.id, b.id)
+    await seedMedia(convo.id, a.id, env.CHAT_USER_STORAGE_QUOTA_BYTES)
+    const publicId = `conversations/${convo.id}/${randomUUID()}`
+    const deletedBefore = fakeStorage.deleted.length
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/conversations/${convo.id}/messages/video`,
+      headers: auth(a.id),
+      body: { publicId },
+    })
+
+    expect(res.statusCode).toBe(413)
+    // O asset subido pelo cliente virou órfão (recusamos a mensagem) → removido.
+    expect(fakeStorage.deleted).toContain(publicId)
+    expect(fakeStorage.deleted.length).toBeGreaterThan(deletedBefore)
+    // Nenhuma mensagem de vídeo foi persistida.
+    const videoMsgs = await testPrisma.message.count({
+      where: {
+        conversationId: convo.id,
+        attachments: { some: { kind: 'VIDEO' } },
+      },
+    })
+    expect(videoMsgs).toBe(0)
+  })
+
   it('corrida: uploads concorrentes do mesmo usuário NÃO furam a cota', async () => {
     const a = await makeUser()
     const b = await makeUser()
