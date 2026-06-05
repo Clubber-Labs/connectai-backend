@@ -114,15 +114,21 @@ export class CloudinaryStorageService implements IStorageService {
         resource_type: resourceType,
       })
       // Pastas dinâmicas reportam asset_folder; as fixas, folder. Fallback: deriva
-      // do public_id (tudo antes do último segmento).
+      // do public_id AUTORITATIVO do provider (r.public_id), nunca do publicId
+      // recebido do cliente — esse valor entra na verificação de pertencimento.
       const folder =
-        r.asset_folder ?? r.folder ?? publicId.split('/').slice(0, -1).join('/')
+        r.asset_folder ??
+        r.folder ??
+        r.public_id.split('/').slice(0, -1).join('/')
       // Poster gerado on-demand pelo Cloudinary: 1 frame representativo do vídeo
       // entregue como JPEG. Não custa storage nem transcoding (URL derivada).
       const thumbnailUrl = cloudinary.url(r.public_id, {
         resource_type: 'video',
         format: 'jpg',
         transformation: [{ start_offset: 'auto' }],
+        // Explícito: cloudinary.url() pode ignorar o secure global em algumas
+        // versões e gerar http://. A URL fica persistida, então força https.
+        secure: true,
       })
       return {
         publicId: r.public_id,

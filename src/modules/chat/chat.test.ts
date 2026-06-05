@@ -993,6 +993,56 @@ describe('vídeo — upload direto assinado', () => {
       expect(res.statusCode).toBe(400)
     })
 
+    it('publicId só de espaços → 400 (trim no boundary)', async () => {
+      const a = await makeUser()
+      const b = await makeUser()
+      const convo = await makeDirectConversation(a.id, b.id)
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/conversations/${convo.id}/messages/video`,
+        headers: auth(a.id),
+        body: { publicId: '   ' },
+      })
+      expect(res.statusCode).toBe(400)
+    })
+
+    // Modo de pasta DINÂMICA do Cloudinary (padrão para contas novas): o
+    // public_id NÃO inclui o caminho; a pasta vem em asset_folder. O
+    // pertencimento depende do ramo `asset.folder === folder` — este teste
+    // falha se alguém removê-lo (a regressão que a revisão tentou introduzir).
+    it('aceita asset em pasta dinâmica (publicId sem caminho + asset_folder)', async () => {
+      const a = await makeUser()
+      const b = await makeUser()
+      const convo = await makeDirectConversation(a.id, b.id)
+      const publicId = `dyn::conversations/${convo.id}::${randomUUID()}`
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/conversations/${convo.id}/messages/video`,
+        headers: auth(a.id),
+        body: { publicId },
+      })
+
+      expect(res.statusCode).toBe(201)
+      expect(res.json().attachments[0].kind).toBe('VIDEO')
+    })
+
+    it('pasta dinâmica: asset_folder de outra conversa → 403', async () => {
+      const a = await makeUser()
+      const b = await makeUser()
+      const convo = await makeDirectConversation(a.id, b.id)
+      const publicId = `dyn::conversations/${randomUUID()}::${randomUUID()}`
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/conversations/${convo.id}/messages/video`,
+        headers: auth(a.id),
+        body: { publicId },
+      })
+      expect(res.statusCode).toBe(403)
+    })
+
     it('mensagem só de vídeo não pode ser editada → 403', async () => {
       const a = await makeUser()
       const b = await makeUser()

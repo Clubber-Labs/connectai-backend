@@ -55,7 +55,7 @@ export const createVideoMessageSchema = z.object({
   // O cliente sobe o vídeo DIRETO ao Cloudinary (upload assinado) e envia só o
   // publicId resultante. Os metadados (duração, dimensões, tamanho, formato) são
   // lidos do provider no backend — fonte da verdade, não confiamos no cliente.
-  publicId: z.string().min(1, 'publicId obrigatório').max(255),
+  publicId: z.string().trim().min(1, 'publicId obrigatório').max(255),
 })
 
 export const messageReactionSchema = z.object({

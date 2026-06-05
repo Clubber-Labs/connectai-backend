@@ -82,6 +82,24 @@ export class FakeStorageService implements IStorageService {
     _resourceType: 'video',
   ): Promise<RemoteAsset | null> {
     if (publicId.includes('missing')) return null
+    // Seam: simula o modo de pasta DINÂMICA do Cloudinary. Formato
+    // 'dyn::<asset_folder>::<short_id>' → o public_id NÃO inclui o caminho da
+    // pasta (vem só em asset_folder), como o provider reporta nesse modo. Cobre
+    // o ramo `asset.folder === folder` do pertencimento.
+    if (publicId.startsWith('dyn::')) {
+      const [, folder, shortId] = publicId.split('::')
+      return {
+        publicId: shortId,
+        url: `https://fake.storage/${shortId}.mp4`,
+        bytes: 1_234_567,
+        format: 'mp4',
+        folder,
+        durationMs: 8200,
+        width: 1080,
+        height: 1920,
+        thumbnailUrl: `https://fake.storage/${shortId}.jpg`,
+      }
+    }
     const folder = publicId.split('/').slice(0, -1).join('/')
     const format = publicId.includes('badformat') ? 'avi' : 'mp4'
     const bytes = publicId.includes('toobig') ? 60 * 1024 * 1024 : 1_234_567

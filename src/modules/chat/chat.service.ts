@@ -1,7 +1,7 @@
 import type { Readable } from 'node:stream'
 import { logger } from '../../lib/logger'
 import { realtime } from '../../lib/realtime'
-import { getStorage } from '../../lib/storage'
+import { getStorage, type RemoteAsset } from '../../lib/storage'
 import {
   assertVideoFormat,
   deleteUploaded,
@@ -421,6 +421,18 @@ function conversationFolder(conversationId: string) {
 }
 
 /**
+ * Confirma que o asset verificado pertence à pasta DESTA conversa. Os dois
+ * checks cobrem os dois modos de pasta do Cloudinary e ambos os campos são
+ * autoritativos do provider — NÃO remova o `startsWith`:
+ *  - pasta fixa: o `public_id` já inclui o caminho (`conversations/<id>/...`);
+ *  - pasta dinâmica: o caminho vem em `asset_folder`/`folder`, e o `public_id`
+ *    pode ser só o nome do asset (o `startsWith` falharia para upload legítimo).
+ */
+function assetBelongsToConversation(asset: RemoteAsset, folder: string) {
+  return asset.publicId.startsWith(`${folder}/`) || asset.folder === folder
+}
+
+/**
  * Assina os params para o cliente subir um vídeo DIRETO ao Cloudinary. Exige
  * participante ativo (e, em DM, ausência de bloqueio) e trava a pasta na
  * conversa — só quem participa consegue uma assinatura para aquela pasta.
@@ -449,9 +461,8 @@ export async function sendVideoMessage(
     throw { statusCode: 400, message: 'Vídeo não encontrado no provedor' }
   }
   // Liga o asset à conversa: impede anexar vídeo de outra conversa/pasta mesmo
-  // que o publicId exista. O prefixo é checado contra o public_id autoritativo.
-  const folder = conversationFolder(conversationId)
-  if (!asset.publicId.startsWith(`${folder}/`) && asset.folder !== folder) {
+  // que o publicId exista.
+  if (!assetBelongsToConversation(asset, conversationFolder(conversationId))) {
     throw { statusCode: 403, message: 'Vídeo não pertence a esta conversa' }
   }
   assertVideoFormat(asset.format)
