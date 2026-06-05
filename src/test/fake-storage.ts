@@ -19,7 +19,11 @@ export class FakeStorageService implements IStorageService {
     deliveryType: StorageDeliveryType
   }[] = []
   deleted: string[] = []
-  deletedResources: { key: string; resourceType: StorageResourceType }[] = []
+  deletedResources: {
+    key: string
+    resourceType: StorageResourceType
+    deliveryType: StorageDeliveryType
+  }[] = []
   // Seam de teste: força o próximo uploadStream a reportar um tamanho acima do
   // int4 do Postgres (> 2.147B). O insert do attachment estoura ("value out of
   // range for type integer") → permite testar o delete compensatório sem mockar
@@ -84,9 +88,10 @@ export class FakeStorageService implements IStorageService {
   async delete(
     key: string,
     resourceType: StorageResourceType = 'image',
+    deliveryType: StorageDeliveryType = 'upload',
   ): Promise<void> {
     this.deleted.push(key)
-    this.deletedResources.push({ key, resourceType })
+    this.deletedResources.push({ key, resourceType, deliveryType })
   }
 
   signUpload(folder: string, resourceType: 'video'): UploadSignature {

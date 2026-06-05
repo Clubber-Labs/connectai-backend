@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { v2 as cloudinary } from 'cloudinary'
 import type { CloudinaryCredentials } from '../env'
 import { env } from '../env'
+import { logger } from '../logger'
 import type {
   FileData,
   IStorageService,
@@ -102,8 +103,23 @@ export class CloudinaryStorageService implements IStorageService {
   async delete(
     key: string,
     resourceType: StorageResourceType = 'image',
+    deliveryType: StorageDeliveryType = 'upload',
   ): Promise<void> {
-    await cloudinary.uploader.destroy(key, { resource_type: resourceType })
+    // type: o asset privado (chat) vive no namespace 'authenticated'; destroy sem
+    // ele mira 'upload' e NÃO apaga. invalidate: purga o asset E seus derivados
+    // (ex.: poster do vídeo) do CDN — senão o thumbnail ficaria em cache acessível.
+    const result = await cloudinary.uploader.destroy(key, {
+      resource_type: resourceType,
+      type: deliveryType,
+      invalidate: true,
+    })
+    // destroy no namespace errado NÃO lança: resolve com { result: 'not found' }.
+    // Sem logar, um delete no type errado deixaria um órfão pago invisível.
+    if (result?.result === 'not found') {
+      logger.warn(
+        `destroy não encontrou o asset '${key}' (resource_type=${resourceType}, type=${deliveryType}) — namespace errado? asset pode ter ficado órfão`,
+      )
+    }
   }
 
   signUpload(folder: string, resourceType: 'video'): UploadSignature {
@@ -157,6 +173,12 @@ export class CloudinaryStorageService implements IStorageService {
     try {
       const r = await cloudinary.api.resource(publicId, {
         resource_type: resourceType,
+        // O vídeo de chat é sempre 'authenticated' (signUpload força). resource()
+        // sem type procura no namespace 'upload' → 404 no asset privado → null.
+        type: 'authenticated',
+        // Sem media_metadata o Cloudinary NÃO retorna r.duration (vem undefined →
+        // durationMs persistido como null).
+        media_metadata: true,
       })
       // Pastas dinâmicas reportam asset_folder; as fixas, folder. Fallback: deriva
       // do public_id AUTORITATIVO do provider (r.public_id), nunca do publicId
@@ -171,14 +193,23 @@ export class CloudinaryStorageService implements IStorageService {
       const thumbnailUrl = this.signedUrl(r.public_id, 'video', {
         asThumbnail: true,
       })
+      // O SDK tipa duration como number | string. Uma string numérica ("4.035")
+      // cairia no ramo null sem a coerção → durationMs perdido.
+      const durationSec =
+        typeof r.duration === 'number'
+          ? r.duration
+          : typeof r.duration === 'string'
+            ? Number(r.duration)
+            : Number.NaN
       return {
         publicId: r.public_id,
         url: r.secure_url,
         bytes: r.bytes,
         format: r.format,
         folder,
-        durationMs:
-          typeof r.duration === 'number' ? Math.round(r.duration * 1000) : null,
+        durationMs: Number.isFinite(durationSec)
+          ? Math.round(durationSec * 1000)
+          : null,
         width: typeof r.width === 'number' ? r.width : null,
         height: typeof r.height === 'number' ? r.height : null,
         thumbnailUrl,
