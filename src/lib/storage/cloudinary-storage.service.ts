@@ -14,6 +14,13 @@ import type {
   UploadSignature,
 } from './storage.interface'
 
+/** Normaliza o resource_type do provider; tipo inesperado vira 'raw' (não-mídia). */
+function toResourceType(value: string): StorageResourceType {
+  return value === 'image' || value === 'video' || value === 'raw'
+    ? value
+    : 'raw'
+}
+
 export class CloudinaryStorageService implements IStorageService {
   private readonly credentials: CloudinaryCredentials
 
@@ -79,9 +86,10 @@ export class CloudinaryStorageService implements IStorageService {
             url: result.secure_url,
             key: result.public_id,
             bytes: result.bytes,
-            // O que o Cloudinary detectou no conteúdo (resource_type 'auto'):
-            // 'image' | 'video' | 'raw'.
-            detectedResourceType: result.resource_type as StorageResourceType,
+            // O que o Cloudinary detectou no conteúdo (resource_type 'auto').
+            // Coage defensivamente: um tipo inesperado vira 'raw' (não-mídia →
+            // rejeitado pelo content-check), em vez de um cast cego.
+            detectedResourceType: toResourceType(result.resource_type),
           })
         },
       )

@@ -839,6 +839,33 @@ describe('anexo de áudio', () => {
     })
     expect(count).toBe(0)
   })
+
+  it('> 5 MB de conteúdo não-mídia: 413 limpa o parcial com o tipo detectado', async () => {
+    const a = await makeUser()
+    const b = await makeUser()
+    const convo = await makeDirectConversation(a.id, b.id)
+    // Não-mídia > 5 MB: o truncamento (413) roda ANTES do content-check, então o
+    // parcial precisa ser deletado com o tipo DETECTADO ('raw'), não 'video'.
+    fakeStorage.forceDetectedResourceType = 'raw'
+    const big = Buffer.alloc(5 * 1024 * 1024 + 1024, 1)
+    const { body, contentType } = multipartFormData(
+      big,
+      'audio',
+      'nota.m4a',
+      'audio/mp4',
+      { durationMs: '3000' },
+    )
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/conversations/${convo.id}/messages/audio`,
+      headers: { ...auth(a.id), 'content-type': contentType },
+      payload: body,
+    })
+
+    expect(res.statusCode).toBe(413)
+    expect(fakeStorage.deletedResources[0]?.resourceType).toBe('raw')
+  })
 })
 
 describe('vídeo — upload direto assinado', () => {
