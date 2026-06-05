@@ -24,6 +24,7 @@ import { healthRoutes } from '../modules/health/health.routes'
 import { postsRoutes } from '../modules/posts/posts.routes'
 import { reactionsRoutes } from '../modules/reactions/reactions.routes'
 import { reportsRoutes } from '../modules/reports/reports.routes'
+import { consentRoutes } from '../modules/consent/consent.routes'
 import { socialAuthRoutes } from '../modules/social-auth/social-auth.routes'
 import { usersRoutes } from '../modules/users/users.routes'
 
@@ -101,6 +102,7 @@ export function buildApp() {
   app.register(reportsRoutes)
   app.register(blocksRoutes)
   app.register(chatRoutes)
+  app.register(consentRoutes)
 
   return app
 }

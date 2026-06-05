@@ -505,7 +505,7 @@ model UserConsent {
   updatedAt          DateTime  @updatedAt
   revokedAt          DateTime?
 
-  @@index([userId])
+  // @@index([userId]) removido — userId @unique já cria índice implícito
   @@map("user_consents")
 }
 
