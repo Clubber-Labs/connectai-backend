@@ -97,7 +97,7 @@ export class CloudinaryStorageService implements IStorageService {
 
   signUpload(folder: string, resourceType: 'video'): UploadSignature {
     const timestamp = Math.round(Date.now() / 1000)
-    const type: StorageDeliveryType = 'authenticated'
+    const type = 'authenticated' as const
     // Assina folder + timestamp + type: o cliente envia exatamente esses params
     // (mais api_key/file). Trava a pasta na conversa (o cliente não escolhe) e
     // força entrega autenticada (o vídeo sobe privado, acessível só assinado).
@@ -154,15 +154,11 @@ export class CloudinaryStorageService implements IStorageService {
         r.asset_folder ??
         r.folder ??
         r.public_id.split('/').slice(0, -1).join('/')
-      // Poster gerado on-demand pelo Cloudinary: 1 frame representativo do vídeo
-      // entregue como JPEG. Não custa storage nem transcoding (URL derivada).
-      const thumbnailUrl = cloudinary.url(r.public_id, {
-        resource_type: 'video',
-        format: 'jpg',
-        transformation: [{ start_offset: 'auto' }],
-        // Explícito: cloudinary.url() pode ignorar o secure global em algumas
-        // versões e gerar http://. A URL fica persistida, então força https.
-        secure: true,
+      // Poster (1 frame em JPEG) gerado on-demand pelo Cloudinary. O vídeo é
+      // 'authenticated' (privado), então o thumbnail também precisa ser ASSINADO
+      // — senão a URL persistida apontaria para entrega pública e daria 401.
+      const thumbnailUrl = this.signedUrl(r.public_id, 'video', {
+        asThumbnail: true,
       })
       return {
         publicId: r.public_id,

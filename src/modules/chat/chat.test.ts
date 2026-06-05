@@ -587,7 +587,12 @@ describe('anexo de áudio', () => {
     expect(attachment.kind).toBe('AUDIO')
     expect(attachment.durationMs).toBe(3200)
     expect(attachment.waveform).toEqual([3, 7, 12, 9, 4])
-    expect(attachment.url).toMatch(/^https:\/\/fake\.storage\//)
+    // URL ASSINADA (mídia privada); key não vaza; upload é privado.
+    expect(attachment.url).toContain('/signed/')
+    expect(attachment.key).toBeUndefined()
+    expect(
+      fakeStorage.uploads[fakeStorage.uploads.length - 1]?.deliveryType,
+    ).toBe('authenticated')
   })
 
   it('áudio sem waveform usa lista vazia', async () => {

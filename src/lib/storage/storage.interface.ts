@@ -43,9 +43,9 @@ export interface UploadSignature {
   cloudName: string
   folder: string
   resourceType: 'video'
-  // Entrega autenticada: o cliente sobe com este `type` para o asset ficar
+  // Sempre 'authenticated': o cliente sobe com este `type` para o asset ficar
   // privado (acessível só via URL assinada). Vai dentro dos params assinados.
-  type: StorageDeliveryType
+  type: 'authenticated'
 }
 
 /** Metadados autoritativos de um asset já hospedado no provider (fonte da verdade). */

@@ -111,6 +111,10 @@ function shapeReplyPreview(replyTo: MessageRow['replyTo']) {
  * por uma URL ASSINADA gerada do key (publicId) e DESCARTA o key (não vaza o
  * publicId na API). Só participantes chegam aqui → quem saiu/bloqueou não recebe
  * URL nova (revogação pela autorização). Áudio/vídeo são resource_type 'video'.
+ *
+ * PRESSUPOSIÇÃO: toda mídia de chat sobe como 'authenticated'. Anexo legado em
+ * delivery 'upload' (público) assinado aqui daria 401 — ver nota de migração no
+ * PR #52 antes de servir mídia antiga.
  */
 function shapeAttachments(attachments: MessageRow['attachments']) {
   const storage = getStorage()
