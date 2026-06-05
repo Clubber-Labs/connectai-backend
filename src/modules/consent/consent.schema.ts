@@ -18,6 +18,13 @@ export const createConsentSchema = consentFieldsSchema
 
 export const updateConsentSchema = consentFieldsSchema.partial()
 
+export const consentActionSchema = z.enum([
+  'GRANTED',
+  'UPDATED',
+  'REVOKED',
+  'EXPORTED',
+])
+
 /** Shape público do consentimento — sem ipAddress/userAgent (campos técnicos internos) */
 export const consentResponseSchema = z.object({
   id: z.string(),
@@ -40,7 +47,7 @@ export const consentResponseSchema = z.object({
 export const auditLogEntrySchema = z.object({
   id: z.string(),
   userId: z.string(),
-  action: z.string(),
+  action: consentActionSchema,
   changedFields: z.unknown(), // JSON — validado na escrita, não na leitura
   consentVersion: z.string(),
   createdAt: z.date(),

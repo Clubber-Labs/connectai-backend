@@ -1,12 +1,4 @@
 import {
-  ALL_CONSENT_FIELDS,
-  CURRENT_CONSENT_VERSION,
-  type AuditQuery,
-  type ConsentField,
-  type CreateConsentBody,
-  type UpdateConsentBody,
-} from './consent.schema'
-import {
   createConsentWithAudit,
   createExportAuditLog,
   findAuditLogsByUserId,
@@ -15,6 +7,14 @@ import {
   revokeConsentWithAudit,
   updateConsentFields,
 } from './consent.repository'
+import {
+  ALL_CONSENT_FIELDS,
+  type AuditQuery,
+  type ConsentField,
+  type CreateConsentBody,
+  CURRENT_CONSENT_VERSION,
+  type UpdateConsentBody,
+} from './consent.schema'
 
 type RequestMeta = { ipAddress?: string | null; userAgent?: string }
 type AuditEntry = { field: string; from: boolean | null; to: boolean }
@@ -97,7 +97,7 @@ export async function updateConsent(
     auditEntries: changed,
     auditIpAddress: meta.ipAddress ?? null,
     auditUserAgent: meta.userAgent,
-    consentVersion: existing.consentVersion,
+    consentVersion: CURRENT_CONSENT_VERSION,
     reactivate: changed.some((entry) => entry.to),
   })
 }

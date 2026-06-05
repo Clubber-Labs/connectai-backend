@@ -509,12 +509,19 @@ model UserConsent {
   @@map("user_consents")
 }
 
+enum ConsentAction {
+  GRANTED
+  UPDATED
+  REVOKED
+  EXPORTED
+}
+
 model ConsentAuditLog {
   id             String   @id @default(uuid())
   userId         String
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  action         String   // GRANTED | UPDATED | REVOKED | EXPORTED
+  action         ConsentAction
   changedFields  Json     // { field: string, from: boolean|null, to: boolean }[]
   ipAddress      String?
   userAgent      String?

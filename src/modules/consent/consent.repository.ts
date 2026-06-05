@@ -57,6 +57,7 @@ export async function updateConsentFields(data: {
       // Não sobrescreve ipAddress/userAgent originais — apenas altera os campos de consentimento
       data: {
         ...data.fields,
+        consentVersion: data.consentVersion,
         ...(data.reactivate ? { revokedAt: null } : {}),
       },
     }),

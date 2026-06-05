@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from '../../test/app'
 import { makeUser } from '../../test/factories'
 import { testPrisma } from '../../test/prisma'
+import { CURRENT_CONSENT_VERSION } from './consent.schema'
 
 let app: FastifyInstance
 
@@ -137,6 +138,60 @@ describe('POST /consent', () => {
 })
 
 // ────────────────────────────────────────────────────────────────────────────
+describe('GET /consent', () => {
+  it('retorna 200 com o consentimento atual', async () => {
+    const user = await makeUser()
+
+    await app.inject({
+      method: 'POST',
+      url: '/consent',
+      headers: {
+        authorization: `Bearer ${token(user.id)}`,
+        'user-agent': 'ConsentRead/1.0',
+      },
+      body: defaultBody,
+    })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/consent',
+      headers: { authorization: `Bearer ${token(user.id)}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({
+      userId: user.id,
+      locationPrecise: true,
+      analytics: true,
+      surveys: false,
+    })
+    expect(res.json()).not.toHaveProperty('ipAddress')
+    expect(res.json()).not.toHaveProperty('userAgent')
+  })
+
+  it('retorna 404 quando não há consentimento', async () => {
+    const user = await makeUser()
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/consent',
+      headers: { authorization: `Bearer ${token(user.id)}` },
+    })
+
+    expect(res.statusCode).toBe(404)
+  })
+
+  it('retorna 401 sem autenticação', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/consent',
+    })
+
+    expect(res.statusCode).toBe(401)
+  })
+})
+
+// ────────────────────────────────────────────────────────────────────────────
 describe('PATCH /consent', () => {
   it('atualiza campo e retorna 200', async () => {
     const user = await makeUser()
@@ -189,6 +244,46 @@ describe('PATCH /consent', () => {
     expect(record?.userAgent).toBe('AgenteCriacao/1.0')
   })
 
+  it('atualiza consentVersion do registro e do audit log para a versão atual', async () => {
+    const user = await makeUser()
+
+    await app.inject({
+      method: 'POST',
+      url: '/consent',
+      headers: { authorization: `Bearer ${token(user.id)}` },
+      body: defaultBody,
+    })
+
+    await testPrisma.userConsent.update({
+      where: { userId: user.id },
+      data: { consentVersion: '0.9' },
+    })
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/consent',
+      headers: { authorization: `Bearer ${token(user.id)}` },
+      body: { marketing: true },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({
+      marketing: true,
+      consentVersion: CURRENT_CONSENT_VERSION,
+    })
+
+    const record = await testPrisma.userConsent.findUnique({
+      where: { userId: user.id },
+    })
+    expect(record?.consentVersion).toBe(CURRENT_CONSENT_VERSION)
+
+    const auditLog = await testPrisma.consentAuditLog.findFirst({
+      where: { userId: user.id, action: 'UPDATED' },
+      orderBy: { createdAt: 'desc' },
+    })
+    expect(auditLog?.consentVersion).toBe(CURRENT_CONSENT_VERSION)
+  })
+
   it('retorna 401 sem autenticação', async () => {
     const res = await app.inject({
       method: 'PATCH',
@@ -197,6 +292,30 @@ describe('PATCH /consent', () => {
     })
 
     expect(res.statusCode).toBe(401)
+  })
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+describe('consent_audit_logs constraints', () => {
+  it('bloqueia action inválida no banco', async () => {
+    const user = await makeUser()
+
+    await expect(
+      testPrisma.$executeRaw`
+        INSERT INTO "consent_audit_logs" (
+          "userId",
+          "action",
+          "changedFields",
+          "consentVersion"
+        )
+        VALUES (
+          ${user.id},
+          'INVALID',
+          '[]'::jsonb,
+          ${CURRENT_CONSENT_VERSION}
+        )
+      `,
+    ).rejects.toThrow()
   })
 })
 
@@ -422,5 +541,14 @@ describe('GET /consent/audit', () => {
     })
 
     expect(res.statusCode).toBe(400)
+  })
+
+  it('retorna 401 sem autenticação', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/consent/audit',
+    })
+
+    expect(res.statusCode).toBe(401)
   })
 })
