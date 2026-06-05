@@ -131,9 +131,24 @@ export async function uploadMessageAudio(
   )
   // Streaming não dispara o 413 do multipart sozinho: o busboy apenas trunca no
   // teto e marca `truncated`. Se truncou, o asset parcial já subiu → limpa e 413.
+  // Deleta com o tipo DETECTADO (o parcial pode ser 'raw'): destroy com o tipo
+  // errado não apaga o asset — o órfão ficaria pago no provider.
   if (file.truncated) {
-    await deleteUploaded(result.key, logger, 'video')
+    await deleteUploaded(result.key, logger, result.detectedResourceType)
     throw { statusCode: 413, message: FILE_TOO_LARGE_MESSAGE }
+  }
+  // Validação por CONTEÚDO (não pelo Content-Type do cliente): o Cloudinary
+  // detecta o tipo real. Áudio/vídeo são 'video'; 'raw'/'image' = não é áudio.
+  // Fecha a lacuna de confiar no mimetype enviado (imagem já é validada pelo
+  // sharp; vídeo, pelo formato do getAsset).
+  if (result.detectedResourceType !== 'video') {
+    // Deleta com o tipo DETECTADO (ex.: 'raw'): destroy com o tipo errado não
+    // apaga o asset — o órfão ficaria pago no provider.
+    await deleteUploaded(result.key, logger, result.detectedResourceType)
+    throw {
+      statusCode: 400,
+      message: 'Conteúdo de áudio inválido: o arquivo não é um áudio',
+    }
   }
   return { ...result, format, size: result.bytes }
 }

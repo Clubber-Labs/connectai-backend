@@ -640,6 +640,39 @@ describe('anexo de áudio', () => {
     expect(res.statusCode).toBe(400)
   })
 
+  it('conteúdo não é áudio (provider detecta) → 400 e remove o órfão', async () => {
+    const a = await makeUser()
+    const b = await makeUser()
+    const convo = await makeDirectConversation(a.id, b.id)
+    // O mimetype passa (audio/mp4), mas o Cloudinary detecta que o conteúdo real
+    // não é mídia (ex.: texto/HTML disfarçado). Não confiamos no Content-Type.
+    fakeStorage.forceDetectedResourceType = 'raw'
+    const { body, contentType } = multipartFormData(
+      tinyM4aBuffer(),
+      'audio',
+      'nota.m4a',
+      'audio/mp4',
+      { durationMs: '1000' },
+    )
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/conversations/${convo.id}/messages/audio`,
+      headers: { ...auth(a.id), 'content-type': contentType },
+      payload: body,
+    })
+
+    expect(res.statusCode).toBe(400)
+    // O asset subiu antes da detecção → foi removido (não vira lixo pago) E com
+    // o resource_type DETECTADO ('raw'), senão o destroy não apagaria o órfão.
+    expect(fakeStorage.deleted).toHaveLength(1)
+    expect(fakeStorage.deletedResources[0]?.resourceType).toBe('raw')
+    const count = await testPrisma.message.count({
+      where: { conversationId: convo.id },
+    })
+    expect(count).toBe(0)
+  })
+
   it('waveform com JSON inválido → 400', async () => {
     const a = await makeUser()
     const b = await makeUser()
@@ -805,6 +838,33 @@ describe('anexo de áudio', () => {
       where: { conversationId: convo.id },
     })
     expect(count).toBe(0)
+  })
+
+  it('> 5 MB de conteúdo não-mídia: 413 limpa o parcial com o tipo detectado', async () => {
+    const a = await makeUser()
+    const b = await makeUser()
+    const convo = await makeDirectConversation(a.id, b.id)
+    // Não-mídia > 5 MB: o truncamento (413) roda ANTES do content-check, então o
+    // parcial precisa ser deletado com o tipo DETECTADO ('raw'), não 'video'.
+    fakeStorage.forceDetectedResourceType = 'raw'
+    const big = Buffer.alloc(5 * 1024 * 1024 + 1024, 1)
+    const { body, contentType } = multipartFormData(
+      big,
+      'audio',
+      'nota.m4a',
+      'audio/mp4',
+      { durationMs: '3000' },
+    )
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/conversations/${convo.id}/messages/audio`,
+      headers: { ...auth(a.id), 'content-type': contentType },
+      payload: body,
+    })
+
+    expect(res.statusCode).toBe(413)
+    expect(fakeStorage.deletedResources[0]?.resourceType).toBe('raw')
   })
 })
 

@@ -21,13 +21,19 @@ export interface UploadResult {
 /** Resultado do upload em stream: o tamanho vem do provider (não do buffer). */
 export interface StreamUploadResult extends UploadResult {
   bytes: number
+  // resource_type que o PROVIDER detectou no conteúdo real (não o mimetype do
+  // cliente): 'video' para áudio/vídeo, 'image', ou 'raw' p/ não-mídia. Permite
+  // rejeitar um arquivo cujo conteúdo não bate com o tipo declarado — e deletar
+  // o órfão com o tipo CERTO.
+  detectedResourceType: StorageResourceType
 }
 
 /**
  * Tipo de recurso no provider. O Cloudinary separa imagem de áudio/vídeo: ambos
- * áudio e vídeo são 'video'. Deletar com o tipo errado falha silenciosamente.
+ * áudio e vídeo são 'video'. 'raw' = arquivo não-mídia. Deletar com o tipo
+ * errado falha silenciosamente (ex.: destroy de um 'raw' como 'video' não apaga).
  */
-export type StorageResourceType = 'image' | 'video'
+export type StorageResourceType = 'image' | 'video' | 'raw'
 
 /**
  * Tipo de entrega no provider. 'upload' = público (default; avatar/evento).
