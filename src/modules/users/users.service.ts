@@ -1,10 +1,10 @@
 import { hash } from 'bcryptjs'
 import { deleteUploaded, uploadAvatar } from '../../lib/uploads'
+import { getConsentSummary } from '../consent/consent.service'
 import {
   findFollow,
   findFollowStatusesByFollower,
 } from '../follows/follows.repository'
-import { getConsentSummary } from '../consent/consent.service'
 import {
   createUser,
   deleteUser,
