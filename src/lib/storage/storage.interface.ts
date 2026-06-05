@@ -85,7 +85,14 @@ export interface IStorageService {
   ): Promise<StreamUploadResult>
   // resourceType default 'image' mantém os callers de imagem (avatar/evento)
   // intactos; áudio/vídeo passam 'video' para o destroy acertar o recurso.
-  delete(key: string, resourceType?: StorageResourceType): Promise<void>
+  // deliveryType default 'upload' (público) mantém avatar/evento; mídia de chat
+  // passa 'authenticated'. As DUAS dimensões precisam bater: destroy no namespace
+  // errado retorna 'not found' e não apaga (asset órfão pago).
+  delete(
+    key: string,
+    resourceType?: StorageResourceType,
+    deliveryType?: StorageDeliveryType,
+  ): Promise<void>
   /**
    * Gera uma URL de ENTREGA assinada (não-forjável) para um asset privado,
    * a partir do key/publicId. Síncrono (puro cálculo de assinatura, sem I/O).

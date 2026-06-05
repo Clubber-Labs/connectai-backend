@@ -5,7 +5,7 @@ import { realtime } from '../../lib/realtime'
 import { getStorage, type RemoteAsset } from '../../lib/storage'
 import {
   assertVideoFormat,
-  deleteUploaded,
+  deleteChatMedia,
   MAX_VIDEO_SIZE,
   resourceTypeForKind,
   uploadMessageAudio,
@@ -478,7 +478,7 @@ async function createBackendMediaMessage(
       additionalBytes,
     )
   } catch (err) {
-    await deleteUploaded(
+    await deleteChatMedia(
       attachment.key,
       logger,
       resourceTypeForKind(attachment.kind),
@@ -665,7 +665,7 @@ export async function sendVideoMessage(
   } catch (err) {
     if (err instanceof QuotaExceededError) {
       // O asset (subido pelo cliente) virou órfão pois recusamos a mensagem.
-      await deleteUploaded(asset.publicId, logger, 'video')
+      await deleteChatMedia(asset.publicId, logger, 'video')
       throw { statusCode: 413, message: STORAGE_QUOTA_MESSAGE }
     }
     // Corrida de idempotência: devolve a vencedora SEM deletar o asset — diferente
@@ -679,7 +679,7 @@ export async function sendVideoMessage(
     )
     if (dup) return dup
     // Falha não-idempotência → o asset virou órfão: limpa.
-    await deleteUploaded(asset.publicId, logger, 'video')
+    await deleteChatMedia(asset.publicId, logger, 'video')
     throw err
   }
   await publishMessage(conversationId, participantIds, message)
@@ -865,7 +865,7 @@ export async function deleteMessage(
   // o soft-delete. Sem isso, áudio/imagem/vídeo apagados viram lixo pago eterno.
   const attachments = await findMessageAttachments(messageId)
   for (const att of attachments) {
-    await deleteUploaded(att.key, logger, resourceTypeForKind(att.kind))
+    await deleteChatMedia(att.key, logger, resourceTypeForKind(att.kind))
   }
 }
 

@@ -713,6 +713,8 @@ describe('anexo de áudio', () => {
     // o resource_type DETECTADO ('raw'), senão o destroy não apagaria o órfão.
     expect(fakeStorage.deleted).toHaveLength(1)
     expect(fakeStorage.deletedResources[0]?.resourceType).toBe('raw')
+    // Mídia de chat é privada: a limpeza precisa mirar o namespace 'authenticated'.
+    expect(fakeStorage.deletedResources[0]?.deliveryType).toBe('authenticated')
     const count = await testPrisma.message.count({
       where: { conversationId: convo.id },
     })
@@ -911,6 +913,8 @@ describe('anexo de áudio', () => {
 
     expect(res.statusCode).toBe(413)
     expect(fakeStorage.deletedResources[0]?.resourceType).toBe('raw')
+    // Mídia de chat é privada: a limpeza precisa mirar o namespace 'authenticated'.
+    expect(fakeStorage.deletedResources[0]?.deliveryType).toBe('authenticated')
   })
 })
 
@@ -1004,6 +1008,34 @@ describe('vídeo — upload direto assinado', () => {
       expect(attachment.thumbnailUrl).toContain('/signed/')
       expect(attachment.thumbnailUrl).toMatch(/\.jpg$/)
       expect(attachment.key).toBeUndefined()
+    })
+
+    it('apagar mensagem de vídeo remove o asset (video + authenticated)', async () => {
+      const a = await makeUser()
+      const b = await makeUser()
+      const convo = await makeDirectConversation(a.id, b.id)
+      const publicId = `conversations/${convo.id}/${randomUUID()}`
+      const created = await app.inject({
+        method: 'POST',
+        url: `/conversations/${convo.id}/messages/video`,
+        headers: auth(a.id),
+        body: { publicId },
+      })
+      expect(created.statusCode).toBe(201)
+
+      const del = await app.inject({
+        method: 'DELETE',
+        url: `/conversations/${convo.id}/messages/${created.json().id}`,
+        headers: auth(a.id),
+      })
+      expect(del.statusCode).toBe(204)
+      // Vídeo é resource_type 'video' e privado → o destroy precisa de
+      // 'authenticated', senão o asset do cliente vira órfão pago.
+      expect(fakeStorage.deletedResources).toContainEqual({
+        key: publicId,
+        resourceType: 'video',
+        deliveryType: 'authenticated',
+      })
     })
 
     it('publicId de outra conversa → 403', async () => {
@@ -1984,10 +2016,13 @@ describe('ciclo de vida de mídia (auditoria 1.1/1.2)', () => {
       headers: auth(a.id),
     })
     expect(del.statusCode).toBe(204)
-    // 1.1: áudio é resource_type 'video' no Cloudinary (destroy com tipo certo).
+    // 1.1: áudio é resource_type 'video' no Cloudinary (destroy com tipo certo)
+    // e 'authenticated' (mídia de chat é privada — destroy no namespace público
+    // não apagaria o asset → órfão pago).
     expect(fakeStorage.deletedResources).toContainEqual({
       key,
       resourceType: 'video',
+      deliveryType: 'authenticated',
     })
   })
 
@@ -2019,6 +2054,7 @@ describe('ciclo de vida de mídia (auditoria 1.1/1.2)', () => {
     expect(fakeStorage.deletedResources).toContainEqual({
       key,
       resourceType: 'image',
+      deliveryType: 'authenticated',
     })
   })
 

@@ -1,7 +1,11 @@
 import type { Readable } from 'node:stream'
 import { imageProcessorService } from './image-processor'
 import { logger } from './logger'
-import { getStorage, type StorageResourceType } from './storage'
+import {
+  getStorage,
+  type StorageDeliveryType,
+  type StorageResourceType,
+} from './storage'
 
 // GIF fora de propósito: o processador (sharp/webp) achata GIF animado num
 // frame estático. Em vez de aceitar e degradar silenciosamente, rejeitamos —
@@ -134,7 +138,7 @@ export async function uploadMessageAudio(
   // Deleta com o tipo DETECTADO (o parcial pode ser 'raw'): destroy com o tipo
   // errado não apaga o asset — o órfão ficaria pago no provider.
   if (file.truncated) {
-    await deleteUploaded(result.key, logger, result.detectedResourceType)
+    await deleteChatMedia(result.key, logger, result.detectedResourceType)
     throw { statusCode: 413, message: FILE_TOO_LARGE_MESSAGE }
   }
   // Validação por CONTEÚDO (não pelo Content-Type do cliente): o Cloudinary
@@ -144,7 +148,7 @@ export async function uploadMessageAudio(
   if (result.detectedResourceType !== 'video') {
     // Deleta com o tipo DETECTADO (ex.: 'raw'): destroy com o tipo errado não
     // apaga o asset — o órfão ficaria pago no provider.
-    await deleteUploaded(result.key, logger, result.detectedResourceType)
+    await deleteChatMedia(result.key, logger, result.detectedResourceType)
     throw {
       statusCode: 400,
       message: 'Conteúdo de áudio inválido: o arquivo não é um áudio',
@@ -157,10 +161,24 @@ export async function deleteUploaded(
   key: string,
   logger: { error: (msg: string) => void },
   resourceType: StorageResourceType = 'image',
+  deliveryType: StorageDeliveryType = 'upload',
 ) {
   try {
-    await getStorage().delete(key, resourceType)
+    await getStorage().delete(key, resourceType, deliveryType)
   } catch (err) {
     logger.error(`Falha ao deletar arquivo ${key}: ${(err as Error).message}`)
   }
+}
+
+// Mídia de CHAT é sempre 'authenticated' (privada). Helper dedicado para os
+// callers de chat não dependerem de LEMBRAR o deliveryType: esquecer cairia no
+// default 'upload' e o destroy não apagaria o asset privado (órfão pago). O
+// 'authenticated' fica AQUI, nunca no delete/deleteUploaded genérico, senão
+// avatar/evento (públicos, que omitem o param) regrediriam.
+export async function deleteChatMedia(
+  key: string,
+  logger: { error: (msg: string) => void },
+  resourceType: StorageResourceType,
+) {
+  await deleteUploaded(key, logger, resourceType, 'authenticated')
 }

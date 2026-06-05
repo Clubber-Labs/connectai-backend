@@ -188,6 +188,14 @@ describe('PATCH /users/me/avatar', () => {
 
     expect(res.statusCode).toBe(200)
     expect(fakeStorage.deleted).toContain(firstKey)
+    // Avatar é mídia PÚBLICA: o delete deve mirar o namespace 'upload' (default).
+    // Trava contra uma regressão que hardcode 'authenticated' no primitivo
+    // compartilhado e orfanasse avatar/evento.
+    expect(fakeStorage.deletedResources).toContainEqual({
+      key: firstKey,
+      resourceType: 'image',
+      deliveryType: 'upload',
+    })
   })
 
   it('retorna 400 com mimetype inválido', async () => {
