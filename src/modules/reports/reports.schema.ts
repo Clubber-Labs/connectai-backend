@@ -27,6 +27,9 @@ export const createReportSchema = z.object({
   details: z.string().max(500).optional(),
 })
 
+// RESOLVED_REMOVED é permitido aqui para quando o conteúdo foi excluído por outro
+// meio (ex: deleção direta pelo autor) e o admin só precisa fechar o ciclo da denúncia.
+// Para remover o conteúdo E resolver, use DELETE /reports/:id/target.
 export const resolveReportSchema = z.object({
   status: z.enum(['REVIEWED', 'RESOLVED_INVALID', 'RESOLVED_REMOVED']),
   resolutionNote: z.string().max(1000).optional(),

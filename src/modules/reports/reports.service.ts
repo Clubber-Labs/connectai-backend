@@ -203,7 +203,7 @@ export async function resolveReport(
 }
 
 async function removeReportedEvent(eventId: string) {
-  const images = (await findEventImageKeys(eventId)) as { key: string }[]
+  const images = await findEventImageKeys(eventId)
   await Promise.all(images.map((img) => deleteUploaded(img.key, logger)))
   await deleteEvent(eventId)
   await cache.invalidate('events:public:*')
@@ -225,13 +225,11 @@ async function removeReportedMessage(messageId: string) {
   }
 
   const attachments = await findMessageAttachments(messageId)
-  for (const attachment of attachments) {
-    await deleteChatMedia(
-      attachment.key,
-      logger,
-      resourceTypeForKind(attachment.kind),
-    )
-  }
+  await Promise.all(
+    attachments.map((a) =>
+      deleteChatMedia(a.key, logger, resourceTypeForKind(a.kind)),
+    ),
+  )
 }
 
 export async function removeReportTarget(
@@ -244,29 +242,43 @@ export async function removeReportTarget(
     throw { statusCode: 404, message: 'Denúncia não encontrada' }
   }
 
-  if (report.eventId) {
-    await removeReportedEvent(report.eventId)
-  } else if (report.commentId) {
-    await removeReportedComment(report.commentId)
-  } else if (report.messageId) {
-    await removeReportedMessage(report.messageId)
-  } else if (report.targetUserId) {
+  if (report.status === 'RESOLVED_REMOVED') {
+    return report
+  }
+
+  if (report.targetUserId) {
     throw {
       statusCode: 400,
       message:
         'Remoção de usuário exige fluxo próprio de suspensão ou banimento',
     }
-  } else {
+  }
+
+  if (!report.eventId && !report.commentId && !report.messageId) {
     throw {
       statusCode: 409,
       message: 'O conteúdo denunciado já não está disponível',
     }
   }
 
-  return updateReportResolution(reportId, requesterId, {
+  // Atualiza o status antes de excluir o conteúdo — se a exclusão falhar,
+  // o trail de auditoria fica consistente (RESOLVED_REMOVED). Vazamento de
+  // storage é recuperável; status PENDING sem conteúdo associado não é.
+  await updateReportResolution(reportId, requesterId, {
     status: 'RESOLVED_REMOVED',
     resolutionNote: 'Conteúdo removido pela moderação',
   })
+
+  if (report.eventId) {
+    await removeReportedEvent(report.eventId)
+  } else if (report.commentId) {
+    await removeReportedComment(report.commentId)
+  } else if (report.messageId) {
+    await removeReportedMessage(report.messageId)
+  }
+
+  // Re-fetch para refletir as FKs nulas após cascade SetNull da deleção de conteúdo
+  return (await findReportById(reportId))!
 }
 
 export async function removeReport(reportId: string, requesterId: string) {

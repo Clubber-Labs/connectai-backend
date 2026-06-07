@@ -477,6 +477,19 @@ describe('PATCH /reports/:id', () => {
 
     expect(res.statusCode).toBe(403)
   })
+
+  it('retorna 404 para denúncia inexistente', async () => {
+    const admin = await makeUser({ role: 'ADMIN' })
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/reports/00000000-0000-0000-0000-000000000000',
+      headers: { authorization: `Bearer ${token(app, admin.id)}` },
+      body: { status: 'REVIEWED' },
+    })
+
+    expect(res.statusCode).toBe(404)
+  })
 })
 
 describe('DELETE /reports/:id/target', () => {
@@ -602,6 +615,49 @@ describe('DELETE /reports/:id/target', () => {
       testPrisma.event.findUnique({ where: { id: event.id } }),
     ).resolves.not.toBeNull()
   })
+
+  it('retorna 401 sem autenticação', async () => {
+    const author = await makeUser()
+    const reporter = await makeUser()
+    const event = await makeEvent(author.id)
+    const report = await makeReport(reporter.id, { eventId: event.id })
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/reports/${report.id}/target`,
+    })
+
+    expect(res.statusCode).toBe(401)
+  })
+
+  it('retorna 404 para denúncia inexistente', async () => {
+    const admin = await makeUser({ role: 'ADMIN' })
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/reports/00000000-0000-0000-0000-000000000000/target',
+      headers: { authorization: `Bearer ${token(app, admin.id)}` },
+    })
+
+    expect(res.statusCode).toBe(404)
+  })
+
+  it('retorna 409 quando conteúdo já foi removido por cascata', async () => {
+    const admin = await makeUser({ role: 'ADMIN' })
+    const author = await makeUser()
+    const reporter = await makeUser()
+    const event = await makeEvent(author.id)
+    const report = await makeReport(reporter.id, { eventId: event.id })
+    await testPrisma.event.delete({ where: { id: event.id } })
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/reports/${report.id}/target`,
+      headers: { authorization: `Bearer ${token(app, admin.id)}` },
+    })
+
+    expect(res.statusCode).toBe(409)
+  })
 })
 
 describe('DELETE /reports/:id', () => {
@@ -643,5 +699,30 @@ describe('DELETE /reports/:id', () => {
       where: { id: report.id },
     })
     expect(stored).not.toBeNull()
+  })
+
+  it('retorna 401 sem autenticação', async () => {
+    const reporter = await makeUser()
+    const target = await makeUser()
+    const report = await makeReport(reporter.id, { targetUserId: target.id })
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/reports/${report.id}`,
+    })
+
+    expect(res.statusCode).toBe(401)
+  })
+
+  it('retorna 404 para denúncia inexistente', async () => {
+    const admin = await makeUser({ role: 'ADMIN' })
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/reports/00000000-0000-0000-0000-000000000000',
+      headers: { authorization: `Bearer ${token(app, admin.id)}` },
+    })
+
+    expect(res.statusCode).toBe(404)
   })
 })
