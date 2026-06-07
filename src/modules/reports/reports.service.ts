@@ -245,7 +245,12 @@ export async function removeReportTarget(
     throw { statusCode: 404, message: 'Denúncia não encontrada' }
   }
 
-  if (report.status === 'RESOLVED_REMOVED') {
+  if (
+    report.status === 'RESOLVED_REMOVED' &&
+    !report.eventId &&
+    !report.commentId &&
+    !report.messageId
+  ) {
     return report
   }
 
