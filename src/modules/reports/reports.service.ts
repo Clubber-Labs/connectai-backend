@@ -5,7 +5,10 @@ import {
   deleteUploaded,
   resourceTypeForKind,
 } from '../../lib/uploads'
-import { findMessageAttachments, softDeleteMessage } from '../chat/chat.repository'
+import {
+  findMessageAttachments,
+  softDeleteMessage,
+} from '../chat/chat.repository'
 import { deleteComment } from '../comments/comments.repository'
 import { resolveCommentEventId } from '../comments/comments.service'
 import { ensureEventAccess } from '../event-invites/event-invites.access'
@@ -278,7 +281,9 @@ export async function removeReportTarget(
   }
 
   // Re-fetch para refletir as FKs nulas após cascade SetNull da deleção de conteúdo
-  return (await findReportById(reportId))!
+  const updated = await findReportById(reportId)
+  if (!updated) throw { statusCode: 404, message: 'Denúncia não encontrada' }
+  return updated
 }
 
 export async function removeReport(reportId: string, requesterId: string) {
