@@ -88,7 +88,21 @@ Tempo; clique no `trace_id` de um log no Loki para pular ao trace.
 
 - Em `NODE_ENV=test` toda a instrumentação é no-op (e o `buildApp()` dos testes
   nem importa o bootstrap), então `pnpm test` não é afetado.
-- O endpoint `/metrics` fica sem auth (modelo pull). Em produção, restrinja o
-  acesso na borda de rede (reverse proxy / firewall).
+- `/metrics` fica aberto por padrão (modelo pull). Para proteger, defina
+  `METRICS_TOKEN` no backend (e o mesmo token no scrape do Prometheus) ou
+  restrinja na borda de rede. `METRICS_ENABLED=false` desliga o endpoint.
 - Coleta de logs via `pino-loki` (push direto) é adequada para esta escala; um
   coletor lendo o stdout dos containers (Grafana Alloy) é o upgrade futuro.
+
+## ⚠️ Esta stack é para DESENVOLVIMENTO LOCAL
+
+Não suba este compose em produção sem ajustes. Especificamente:
+
+- **Grafana** está com login anônimo como `Admin` e senha `admin/admin` — só
+  aceitável numa máquina local. Em produção, remova `GF_AUTH_ANONYMOUS_*` e use
+  uma senha forte.
+- **GlitchTip** usa `SECRET_KEY` com default de dev (baixa entropia). Para
+  qualquer ambiente não-local, defina `GLITCHTIP_SECRET_KEY` no ambiente.
+- O Redis/Valkey do GlitchTip é **broker/cache efêmero** (sem volume, como no
+  sample oficial): num restart, eventos ainda na fila podem se perder. Os dados
+  persistidos (issues, projetos) ficam no Postgres, que tem volume.

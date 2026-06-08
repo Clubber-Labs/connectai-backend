@@ -5,6 +5,10 @@ global:
 scrape_configs:
   - job_name: connectai-backend
     metrics_path: /metrics
+    # Se o backend definir METRICS_TOKEN, o scraper precisa enviá-lo:
+    # authorization:
+    #   type: Bearer
+    #   credentials: <mesmo valor de METRICS_TOKEN>
     static_configs:
       # O backend roda no host; de dentro do container usa-se host.docker.internal.
       - targets: ['host.docker.internal:3333']
