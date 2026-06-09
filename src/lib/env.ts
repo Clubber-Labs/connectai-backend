@@ -111,6 +111,18 @@ const baseSchema = z.object({
   // Token de acesso do projeto Expo (opcional). Necessário só se "Enhanced
   // Security for Push Notifications" estiver ligado no painel Expo/EAS.
   EXPO_ACCESS_TOKEN: z.string().optional(),
+  // Retenção (minimização LGPD) das notificações in-app: expurgo do que passou
+  // do prazo, no padrão dos demais reconcilers.
+  NOTIFY_RETENTION_DAYS: z.coerce.number().int().positive().default(180),
+  NOTIFY_RETENTION_CLEANUP_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(3600000),
+  NOTIFY_RETENTION_CLEANUP_ENABLED: z
+    .enum(['true', 'false', '1', '0'])
+    .default('true')
+    .transform((v) => v === 'true' || v === '1'),
 })
 
 const cloudinarySchema = z.object({
@@ -227,4 +239,8 @@ export const env = {
   ACCOUNT_DELETION_ENABLED: parsed.ACCOUNT_DELETION_ENABLED,
   NOTIFICATIONS_ENABLED: parsed.NOTIFICATIONS_ENABLED,
   EXPO_ACCESS_TOKEN: parsed.EXPO_ACCESS_TOKEN,
+  NOTIFY_RETENTION_DAYS: parsed.NOTIFY_RETENTION_DAYS,
+  NOTIFY_RETENTION_CLEANUP_INTERVAL_MS:
+    parsed.NOTIFY_RETENTION_CLEANUP_INTERVAL_MS,
+  NOTIFY_RETENTION_CLEANUP_ENABLED: parsed.NOTIFY_RETENTION_CLEANUP_ENABLED,
 } as const

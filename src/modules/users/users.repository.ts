@@ -352,6 +352,10 @@ export async function anonymizeUserTx(
     // bloqueios CONTRA ele ficam (listBlocks mostra "Usuário Excluído").
     await tx.socialAccount.deleteMany({ where: { userId } })
     await tx.userConsent.deleteMany({ where: { userId } })
+    // Notificações in-app e tokens de push: dado pessoal do destinatário, somem
+    // na anonimização (o token de push re-identifica o device).
+    await tx.deviceToken.deleteMany({ where: { userId } })
+    await tx.notification.deleteMany({ where: { userId } })
     await tx.block.deleteMany({ where: { blockerId: userId } })
     await tx.follow.deleteMany({
       where: { OR: [{ followerId: userId }, { followingId: userId }] },
