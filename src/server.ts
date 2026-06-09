@@ -38,6 +38,8 @@ import { featuredEventsRoutes } from './modules/featured-events/featured-events.
 import { feedRoutes } from './modules/feed/feed.routes'
 import { followsRoutes } from './modules/follows/follows.routes'
 import { healthRoutes } from './modules/health/health.routes'
+import { startPasswordResetCleanupReconciler } from './modules/password-reset/password-reset.reconciler'
+import { passwordResetRoutes } from './modules/password-reset/password-reset.routes'
 import { postsRoutes } from './modules/posts/posts.routes'
 import { reactionsRoutes } from './modules/reactions/reactions.routes'
 import { reportsRoutes } from './modules/reports/reports.routes'
@@ -130,6 +132,7 @@ app.register(ScalarApiReference, {
 app.register(healthRoutes)
 app.register(authRoutes)
 app.register(socialAuthRoutes)
+app.register(passwordResetRoutes)
 app.register(categoriesRoutes)
 app.register(eventsRoutes)
 app.register(featuredEventsRoutes)
@@ -175,5 +178,8 @@ app.listen({ port: env.PORT, host: '0.0.0.0' }).then(() => {
   }
   if (env.NODE_ENV !== 'test' && env.ACCOUNT_DELETION_ENABLED) {
     startAccountDeletionReconciler(env.ACCOUNT_DELETION_INTERVAL_MS)
+  }
+  if (env.NODE_ENV !== 'test' && env.PASSWORD_RESET_CLEANUP_ENABLED) {
+    startPasswordResetCleanupReconciler(env.PASSWORD_RESET_CLEANUP_INTERVAL_MS)
   }
 })

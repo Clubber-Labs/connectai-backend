@@ -15,6 +15,38 @@ const baseSchema = z.object({
     .optional(),
   STORAGE_DRIVER: z.enum(['cloudinary', 'local']).optional(),
   UPLOADS_DIR: z.string().optional(),
+  // Envio de e-mail (recuperação de senha). Driver `log` (default) só loga o
+  // conteúdo — seguro em dev/test sem credencial. `resend` envia de verdade.
+  EMAIL_DRIVER: z.enum(['log', 'resend']).default('log'),
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().default('ConnectAI <no-reply@connectai.app>'),
+  // Recuperação de senha: validade do código OTP e teto de tentativas por código
+  // (anti brute-force no espaço de 6 dígitos).
+  PASSWORD_RESET_CODE_TTL_MINUTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(15),
+  PASSWORD_RESET_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
+  // Cooldown (s) entre solicitações de código por conta: enquanto houver um código
+  // ativo criado há menos disto, não geramos/enviamos outro — barra email bombing
+  // e limita o brute-force via regeneração de código (cap de tentativas por código
+  // deixaria de ter efeito se desse pra trocar de código à vontade).
+  PASSWORD_RESET_REQUEST_COOLDOWN_SECONDS: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(60),
+  // Expurgo (minimização/retenção LGPD) dos códigos já usados/expirados.
+  PASSWORD_RESET_CLEANUP_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(3600000),
+  PASSWORD_RESET_CLEANUP_ENABLED: z
+    .enum(['true', 'false', '1', '0'])
+    .default('true')
+    .transform((v) => v === 'true' || v === '1'),
   GOOGLE_CLIENT_ID: z.string().optional(),
   FACEBOOK_APP_ID: z.string().optional(),
   FACEBOOK_APP_SECRET: z.string().optional(),
@@ -84,7 +116,17 @@ const cloudinarySchema = z.object({
   CLOUDINARY_AUTH_TOKEN_KEY: z.string().optional(),
 })
 
-const parsed = baseSchema.extend(cloudinarySchema.shape).parse(process.env)
+const parsed = baseSchema
+  .extend(cloudinarySchema.shape)
+  // Falha de boot (em vez de falha silenciosa): o driver `log` nunca pode rodar em
+  // produção — ele não envia e-mail e ainda escreveria o código OTP no log. Mesma
+  // postura do resolveCloudinaryCredentials, que também dá hard-fail em produção.
+  .refine((v) => !(v.NODE_ENV === 'production' && v.EMAIL_DRIVER === 'log'), {
+    path: ['EMAIL_DRIVER'],
+    message:
+      "EMAIL_DRIVER='log' não é permitido em produção. Configure EMAIL_DRIVER=resend e RESEND_API_KEY.",
+  })
+  .parse(process.env)
 
 const STORAGE_DRIVER: 'cloudinary' | 'local' =
   parsed.STORAGE_DRIVER ?? 'cloudinary'
@@ -128,6 +170,15 @@ export const env = {
   UPLOADS_DIR: path.resolve(
     parsed.UPLOADS_DIR ?? path.join(process.cwd(), 'uploads'),
   ),
+  EMAIL_DRIVER: parsed.EMAIL_DRIVER,
+  RESEND_API_KEY: parsed.RESEND_API_KEY,
+  EMAIL_FROM: parsed.EMAIL_FROM,
+  PASSWORD_RESET_CODE_TTL_MINUTES: parsed.PASSWORD_RESET_CODE_TTL_MINUTES,
+  PASSWORD_RESET_MAX_ATTEMPTS: parsed.PASSWORD_RESET_MAX_ATTEMPTS,
+  PASSWORD_RESET_REQUEST_COOLDOWN_SECONDS:
+    parsed.PASSWORD_RESET_REQUEST_COOLDOWN_SECONDS,
+  PASSWORD_RESET_CLEANUP_INTERVAL_MS: parsed.PASSWORD_RESET_CLEANUP_INTERVAL_MS,
+  PASSWORD_RESET_CLEANUP_ENABLED: parsed.PASSWORD_RESET_CLEANUP_ENABLED,
   GOOGLE_CLIENT_ID: parsed.GOOGLE_CLIENT_ID,
   FACEBOOK_APP_ID: parsed.FACEBOOK_APP_ID,
   FACEBOOK_APP_SECRET: parsed.FACEBOOK_APP_SECRET,

@@ -1,11 +1,14 @@
 import { afterAll, afterEach, beforeAll } from 'vitest'
+import { setMailer } from '../lib/mailer'
 import { redis } from '../lib/redis'
 import { setStorage } from '../lib/storage'
+import { fakeMailer } from './fake-mailer'
 import { fakeStorage } from './fake-storage'
 import { testPrisma } from './prisma'
 
 beforeAll(() => {
   setStorage(fakeStorage)
+  setMailer(fakeMailer)
 })
 
 const dbUrl = process.env.DATABASE_URL ?? ''
@@ -46,9 +49,11 @@ afterEach(async () => {
     testPrisma.event.deleteMany(),
     testPrisma.follow.deleteMany(),
     testPrisma.socialAccount.deleteMany(),
+    testPrisma.passwordResetCode.deleteMany(),
     testPrisma.user.deleteMany(),
   ])
   fakeStorage.reset()
+  fakeMailer.reset()
   if (redis) await redis.flushdb()
 })
 
