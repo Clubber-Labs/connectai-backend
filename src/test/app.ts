@@ -23,6 +23,7 @@ import { featuredEventsRoutes } from '../modules/featured-events/featured-events
 import { feedRoutes } from '../modules/feed/feed.routes'
 import { followsRoutes } from '../modules/follows/follows.routes'
 import { healthRoutes } from '../modules/health/health.routes'
+import { passwordResetRoutes } from '../modules/password-reset/password-reset.routes'
 import { postsRoutes } from '../modules/posts/posts.routes'
 import { reactionsRoutes } from '../modules/reactions/reactions.routes'
 import { reportsRoutes } from '../modules/reports/reports.routes'
@@ -75,6 +76,7 @@ export function buildApp() {
   app.register(healthRoutes)
   app.register(authRoutes)
   app.register(socialAuthRoutes)
+  app.register(passwordResetRoutes)
   app.register(categoriesRoutes)
   app.register(eventsRoutes)
   app.register(featuredEventsRoutes)

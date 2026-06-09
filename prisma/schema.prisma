@@ -52,19 +52,20 @@ model User {
   // os timestamps abaixo são marcadores. deactivatedAt = momento em que a conta
   // saiu de ACTIVE (vale tanto para desativação quanto para exclusão agendada).
   // scheduledDeletionAt só existe em PENDING_DELETION. anonymizedAt em ANONYMIZED.
-  accountStatus       AccountStatus @default(ACTIVE)
-  deactivatedAt       DateTime?
-  scheduledDeletionAt DateTime?
-  anonymizedAt        DateTime?
-  events           Event[]
-  attendances      EventAttendance[]
-  posts            Post[]
-  comments         Comment[]
-  reactions        Reaction[]
-  commentReactions CommentReaction[]
-  eventInvitesSent EventInvite[]     @relation("inviter")
-  eventInvitesReceived EventInvite[] @relation("invited")
-  socialAccounts   SocialAccount[]
+  accountStatus         AccountStatus     @default(ACTIVE)
+  deactivatedAt         DateTime?
+  scheduledDeletionAt   DateTime?
+  anonymizedAt          DateTime?
+  events                Event[]
+  attendances           EventAttendance[]
+  posts                 Post[]
+  comments              Comment[]
+  reactions             Reaction[]
+  commentReactions      CommentReaction[]
+  eventInvitesSent      EventInvite[]     @relation("inviter")
+  eventInvitesReceived  EventInvite[]     @relation("invited")
+  socialAccounts        SocialAccount[]
+  passwordResetCodes    PasswordResetCode[]
 
   // Relacionamentos para o sistema de follow
   following Follow[] @relation("follower")
@@ -96,6 +97,25 @@ model User {
   // Predicado do reconciler: PENDING_DELETION com scheduledDeletionAt vencido.
   @@index([accountStatus, scheduledDeletionAt])
   @@map("users")
+}
+
+// Código OTP de recuperação de senha. Guardamos o HASH do código (nunca em
+// claro): um vazamento do banco não revela o código enviado por e-mail.
+// `attempts` limita o brute-force no espaço de 6 dígitos; `usedAt` garante uso
+// único. Só um código ativo por usuário (os anteriores são apagados no request).
+model PasswordResetCode {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash  String
+  expiresAt DateTime
+  usedAt    DateTime?
+  attempts  Int       @default(0)
+  createdAt DateTime  @default(now())
+
+  // Busca o código vigente de um usuário (não usado e não expirado).
+  @@index([userId, usedAt, expiresAt], map: "password_reset_codes_user_active_idx")
+  @@map("password_reset_codes")
 }
 
 enum EventCategory {
@@ -162,11 +182,11 @@ model Conversation {
 }
 
 model ConversationParticipant {
-  id             String          @id @default(uuid())
-  conversationId String
-  conversation   Conversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  userId         String
-  user           User            @relation("conversationParticipations", fields: [userId], references: [id], onDelete: Cascade)
+  id              String          @id @default(uuid())
+  conversationId  String
+  conversation    Conversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User            @relation("conversationParticipations", fields: [userId], references: [id], onDelete: Cascade)
   role            ParticipantRole @default(MEMBER)
   lastReadAt      DateTime?
   lastDeliveredAt DateTime?
@@ -368,15 +388,14 @@ model EventAttendance {
 }
 
 model Post {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   content   String
   authorId  String
   eventId   String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  author    User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  event     Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  event     Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
   comments  Comment[]
   reactions Reaction[]
 
