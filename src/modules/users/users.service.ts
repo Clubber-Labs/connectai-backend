@@ -117,13 +117,20 @@ export async function getMe(userId: string) {
   if (!user || user.accountStatus === 'ANONYMIZED') {
     throw { statusCode: 401, message: 'Sessão inválida' }
   }
-  const { _count, ...rest } = user
+  // password sai aqui (nunca serializado); vira o booleano hasPassword para o
+  // cliente decidir se exige reconfirmação de senha na exclusão.
+  const { _count, password, ...rest } = user
   // Paralelo: evita round-trip sequencial ao banco
   const [preferredUser, consent] = await Promise.all([
     Promise.resolve(withPreferredCategories(rest)),
     getConsentSummary(userId),
   ])
-  return { ...preferredUser, eventsCount: _count.events, consent }
+  return {
+    ...preferredUser,
+    eventsCount: _count.events,
+    hasPassword: password !== null,
+    consent,
+  }
 }
 
 export async function registerUser(data: CreateUserBody) {

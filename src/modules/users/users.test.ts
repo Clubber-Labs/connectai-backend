@@ -1002,3 +1002,32 @@ describe('visibilidade de contas inativas', () => {
     expect(ids).toHaveLength(1)
   })
 })
+
+describe('GET /users/me — hasPassword', () => {
+  it('expõe hasPassword=true e nunca o hash da senha', async () => {
+    const user = await makeUser()
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/users/me',
+      headers: { authorization: `Bearer ${token(app, user.id)}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().hasPassword).toBe(true)
+    expect(res.json()).not.toHaveProperty('password')
+  })
+
+  it('hasPassword=false para conta social-only', async () => {
+    const user = await makeUser({ password: null })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/users/me',
+      headers: { authorization: `Bearer ${token(app, user.id)}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().hasPassword).toBe(false)
+  })
+})

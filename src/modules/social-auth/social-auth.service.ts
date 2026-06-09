@@ -63,12 +63,16 @@ async function loadUserAndDecorate(userId: string) {
       message: 'Usuário não encontrado após autenticação social',
     }
   }
-  // Espelha o shape de getMe/getUserById: achata _count em eventsCount
-  // pra não vazar nome interno do Prisma na resposta pública.
-  const { _count, ...rest } = user
+  // Espelha o shape de getMe: achata _count em eventsCount e expõe hasPassword
+  // (derivado, sem vazar o hash) pra o cliente decidir o fluxo de exclusão.
+  const { _count, password, ...rest } = user
   const profileIncomplete = !user.phone || !user.birthdate
   return {
-    user: { ...rest, eventsCount: _count.events },
+    user: {
+      ...rest,
+      eventsCount: _count.events,
+      hasPassword: password !== null,
+    },
     profileIncomplete,
   }
 }

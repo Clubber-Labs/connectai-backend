@@ -89,6 +89,10 @@ export async function findOwnUserById(id: string) {
     where: { id },
     select: {
       ...userPrivateProfileSelect,
+      // password só para derivar `hasPassword` no service — o hash NUNCA é
+      // serializado (é removido antes de montar a resposta). Mantido fora do
+      // userPrivateProfileSelect compartilhado para não vazar em create/update.
+      password: true,
       _count: { select: { events: true } },
     },
   })
