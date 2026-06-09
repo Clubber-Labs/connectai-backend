@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify'
+import { env } from './env'
 
 /**
  * Métricas in-process expostas em /metrics no formato Prometheus text.
@@ -82,10 +83,7 @@ export function resetMetrics() {
 
 function escapeLabel(value: string): string {
   // Prometheus text format exige escape de \, " e \n nos values de label.
-  return value
-    .replace(/\\/g, '\\\\')
-    .replace(/"/g, '\\"')
-    .replace(/\n/g, '\\n')
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n')
 }
 
 export function renderMetrics(): string {
@@ -127,10 +125,12 @@ export function renderMetrics(): string {
 }
 
 /**
- * Registra o hook de duração (onResponse) e a rota GET /metrics. Auth opcional
- * via env `METRICS_TOKEN`: quando definida, exige `Authorization: Bearer <token>`
- * — protege a rota em produção (expõe nomes de rota/status/latências/contadores
- * de cache, "raio-X" operacional). Sem a env, fica aberta (dev/carga/test).
+ * Registra o hook de duração (onResponse) e a rota GET /metrics. Auth via env
+ * `METRICS_TOKEN`: quando definida, exige `Authorization: Bearer <token>` — a
+ * rota expõe nomes de rota/status/latências/contadores de cache ("raio-X"
+ * operacional). Em produção a rota é SEMPRE fechada: sem token configurado ela
+ * responde 401 (não depende de lembrar de setar a env). Fora de produção e sem
+ * token, fica aberta (dev/carga/test).
  */
 export function registerMetrics(app: FastifyInstance) {
   app.addHook('onResponse', async (request, reply) => {
@@ -140,7 +140,11 @@ export function registerMetrics(app: FastifyInstance) {
 
   app.get('/metrics', async (request, reply) => {
     const token = process.env.METRICS_TOKEN
-    if (token && request.headers.authorization !== `Bearer ${token}`) {
+    if (!token) {
+      if (env.NODE_ENV === 'production') {
+        return reply.status(401).send({ message: 'Não autorizado' })
+      }
+    } else if (request.headers.authorization !== `Bearer ${token}`) {
       return reply.status(401).send({ message: 'Não autorizado' })
     }
     reply.header('content-type', 'text/plain; version=0.0.4')
