@@ -23,6 +23,7 @@ import { featuredEventsRoutes } from '../modules/featured-events/featured-events
 import { feedRoutes } from '../modules/feed/feed.routes'
 import { followsRoutes } from '../modules/follows/follows.routes'
 import { healthRoutes } from '../modules/health/health.routes'
+import { notificationsRoutes } from '../modules/notifications/notifications.routes'
 import { passwordResetRoutes } from '../modules/password-reset/password-reset.routes'
 import { postsRoutes } from '../modules/posts/posts.routes'
 import { reactionsRoutes } from '../modules/reactions/reactions.routes'
@@ -92,6 +93,7 @@ export function buildApp() {
   app.register(blocksRoutes)
   app.register(chatRoutes)
   app.register(consentRoutes)
+  app.register(notificationsRoutes)
 
   return app
 }

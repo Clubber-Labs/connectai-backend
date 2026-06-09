@@ -38,6 +38,9 @@ import { featuredEventsRoutes } from './modules/featured-events/featured-events.
 import { feedRoutes } from './modules/feed/feed.routes'
 import { followsRoutes } from './modules/follows/follows.routes'
 import { healthRoutes } from './modules/health/health.routes'
+import { startNotificationRetentionReconciler } from './modules/notifications/notification-retention.reconciler'
+import { notificationsGateway } from './modules/notifications/notifications.gateway'
+import { notificationsRoutes } from './modules/notifications/notifications.routes'
 import { startPasswordResetCleanupReconciler } from './modules/password-reset/password-reset.reconciler'
 import { passwordResetRoutes } from './modules/password-reset/password-reset.routes'
 import { postsRoutes } from './modules/posts/posts.routes'
@@ -148,7 +151,9 @@ app.register(eventInvitesRoutes)
 app.register(reportsRoutes)
 app.register(blocksRoutes)
 app.register(chatRoutes)
+app.register(notificationsRoutes)
 app.register(chatGateway)
+app.register(notificationsGateway)
 
 app.addHook('onClose', async () => {
   if (redis) await redis.quit()
@@ -181,5 +186,11 @@ app.listen({ port: env.PORT, host: '0.0.0.0' }).then(() => {
   }
   if (env.NODE_ENV !== 'test' && env.PASSWORD_RESET_CLEANUP_ENABLED) {
     startPasswordResetCleanupReconciler(env.PASSWORD_RESET_CLEANUP_INTERVAL_MS)
+  }
+  if (env.NODE_ENV !== 'test' && env.NOTIFY_RETENTION_CLEANUP_ENABLED) {
+    startNotificationRetentionReconciler(
+      env.NOTIFY_RETENTION_CLEANUP_INTERVAL_MS,
+      env.NOTIFY_RETENTION_DAYS,
+    )
   }
 })

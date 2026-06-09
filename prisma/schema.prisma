@@ -94,6 +94,10 @@ model User {
   // Ciclo de vida da conta (motivo de saída / churn)
   accountLifecycleLogs AccountLifecycleLog[]
 
+  // Notificações (push + in-app)
+  deviceTokens  DeviceToken[]
+  notifications Notification[]
+
   // Predicado do reconciler: PENDING_DELETION com scheduledDeletionAt vencido.
   @@index([accountStatus, scheduledDeletionAt])
   @@map("users")
@@ -632,4 +636,65 @@ model AccountLifecycleLog {
   @@index([userId])
   @@index([action, createdAt])
   @@map("account_lifecycle_logs")
+}
+
+// ── Notificações ────────────────────────────────────────────
+
+enum NotificationType {
+  EVENT_NEARBY
+  FOLLOW_REQUEST
+  FOLLOW_ACCEPTED
+  NEW_FOLLOWER
+  EVENT_INVITE
+  EVENT_COMMENT
+  POST_COMMENT
+  EVENT_REACTION
+  POST_REACTION
+  COMMENT_REACTION
+  EVENT_ATTENDANCE
+}
+
+// Token de push (Expo) de um device do usuário. invalidatedAt marca soft-disable
+// (ex.: DeviceNotRegistered no envio) sem apagar — preserva auditoria e permite
+// reativar se o app re-registrar o mesmo token. O envio em si é da entrega 5.
+model DeviceToken {
+  id                String    @id @default(uuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token             String    @unique
+  platform          String?
+  invalidatedAt     DateTime?
+  invalidatedReason String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("device_tokens")
+}
+
+// Notificação in-app (central + base do push). `dedupeKey` torna o fan-out
+// idempotente (retry/duplo gatilho não duplica): a app monta a chave a partir do
+// tipo + alvos. Referências de alvo (actor/event/post/comment) são colunas soltas,
+// sem FK — a notificação é histórica/efêmera (expurgo por retenção) e tolera alvo
+// removido. Só userId (destinatário) é relação, com cascade.
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  actorId   String?
+  eventId   String?
+  postId    String?
+  commentId String?
+  title     String
+  body      String
+  data      Json?
+  dedupeKey String
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, readAt, createdAt])
+  @@index([userId, createdAt])
+  @@map("notifications")
 }
