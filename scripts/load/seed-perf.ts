@@ -11,7 +11,7 @@
  * p95 continua ≤ 1s sem degradar.
  */
 import { randomUUID } from 'node:crypto'
-import { PrismaClient } from '@prisma/client'
+import { EventCategory, PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
 
@@ -20,14 +20,39 @@ const CITIES = [
   { name: 'RJ', lat: -22.91, lng: -43.2 },
   { name: 'BH', lat: -19.92, lng: -43.94 },
 ]
-const CATEGORIES = ['Festa', 'Show', 'Esporte', 'Cultura', 'Tech']
+// Valores do enum EventCategory (prisma/schema.prisma) — categoria virou enum
+// na migration 20260531120000; usar strings livres faz o createMany estourar.
+const CATEGORIES: EventCategory[] = [
+  EventCategory.PARTY,
+  EventCategory.MUSIC,
+  EventCategory.SPORTS,
+  EventCategory.ART,
+  EventCategory.TECH,
+]
 const BATCH = 1000
 const SPREAD_DEG = 0.3 // ~33 km ao redor de cada centro
 
 function numArg(flag: string, fallback: number): number {
   const i = process.argv.indexOf(flag)
-  if (i >= 0 && process.argv[i + 1]) return Number(process.argv[i + 1])
-  return fallback
+  if (i < 0 || !process.argv[i + 1]) return fallback
+  const value = Number(process.argv[i + 1])
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(
+      `Valor inválido para ${flag}: "${process.argv[i + 1]}" (esperado número positivo).`,
+    )
+  }
+  return value
+}
+
+// Esconde a senha do DATABASE_URL antes de logar (evita vazar credencial).
+function redactDbUrl(url: string): string {
+  try {
+    const parsed = new URL(url)
+    if (parsed.password) parsed.password = '***'
+    return parsed.toString()
+  } catch {
+    return '(DATABASE_URL inválida)'
+  }
 }
 
 async function main() {
@@ -36,10 +61,10 @@ async function main() {
   // Guarda de segurança: só roda contra um banco de perf.
   if (!dbUrl.includes('perf')) {
     throw new Error(
-      `Recusando: DATABASE_URL deve apontar pra um banco de perf (conter "perf"). Atual: "${dbUrl}"`,
+      `Recusando: DATABASE_URL deve apontar pra um banco de perf (conter "perf"). Atual: "${redactDbUrl(dbUrl)}"`,
     )
   }
-  console.log(`Seed de ${total} eventos em ${dbUrl}…`)
+  console.log(`Seed de ${total} eventos em ${redactDbUrl(dbUrl)}…`)
 
   const author = await prisma.user.create({
     data: {
