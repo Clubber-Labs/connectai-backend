@@ -17,6 +17,16 @@ enum UserRole {
   ADMIN
 }
 
+// Ciclo de vida da conta (soft-delete estilo Instagram):
+// ACTIVE -> DEACTIVATED (desativar) / PENDING_DELETION (excluir, com carência)
+// -> ACTIVE (reativar no login) ou ANONYMIZED (job após a carência, terminal).
+enum AccountStatus {
+  ACTIVE
+  DEACTIVATED
+  PENDING_DELETION
+  ANONYMIZED
+}
+
 model User {
   id             String   @id @default(uuid())
   name           String
@@ -37,6 +47,15 @@ model User {
   updatedAt      DateTime @updatedAt
   birthdate      DateTime?
   lastSeenAt     DateTime?
+
+  // Ciclo de vida da conta. accountStatus é a fonte da verdade do estado;
+  // os timestamps abaixo são marcadores. deactivatedAt = momento em que a conta
+  // saiu de ACTIVE (vale tanto para desativação quanto para exclusão agendada).
+  // scheduledDeletionAt só existe em PENDING_DELETION. anonymizedAt em ANONYMIZED.
+  accountStatus       AccountStatus @default(ACTIVE)
+  deactivatedAt       DateTime?
+  scheduledDeletionAt DateTime?
+  anonymizedAt        DateTime?
   events           Event[]
   attendances      EventAttendance[]
   posts            Post[]
@@ -71,6 +90,11 @@ model User {
   consent        UserConsent?
   consentLogs    ConsentAuditLog[]
 
+  // Ciclo de vida da conta (motivo de saída / churn)
+  accountLifecycleLogs AccountLifecycleLog[]
+
+  // Predicado do reconciler: PENDING_DELETION com scheduledDeletionAt vencido.
+  @@index([accountStatus, scheduledDeletionAt])
   @@map("users")
 }
 
@@ -565,4 +589,28 @@ model ConsentAuditLog {
   @@index([userId])
   @@index([createdAt])
   @@map("consent_audit_logs")
+}
+
+enum AccountLifecycleAction {
+  DEACTIVATED
+  DELETION_SCHEDULED
+  REACTIVATED
+}
+
+// Log append-only do ciclo de vida da conta. Guarda o "motivo de saída"
+// (opcional) informado ao desativar/excluir — fonte de analytics de churn.
+// Sobrevive à anonimização (o usuário não é deletado, só anonimizado).
+model AccountLifecycleLog {
+  id        String                 @id @default(uuid())
+  userId    String
+  user      User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  action    AccountLifecycleAction
+  reason    String?
+
+  createdAt DateTime               @default(now())
+
+  @@index([userId])
+  @@index([action, createdAt])
+  @@map("account_lifecycle_logs")
 }

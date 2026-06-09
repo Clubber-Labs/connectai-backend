@@ -9,6 +9,8 @@ function uid() {
 
 export async function makeUser(
   overrides: {
+    name?: string
+    lastname?: string
     isPrivate?: boolean
     username?: string
     email?: string
@@ -17,13 +19,17 @@ export async function makeUser(
     birthdate?: Date | null
     isPremium?: boolean
     role?: 'USER' | 'ADMIN'
+    accountStatus?: 'ACTIVE' | 'DEACTIVATED' | 'PENDING_DELETION' | 'ANONYMIZED'
+    deactivatedAt?: Date | null
+    scheduledDeletionAt?: Date | null
+    anonymizedAt?: Date | null
   } = {},
 ) {
   const id = uid()
   return testPrisma.user.create({
     data: {
-      name: `User${id}`,
-      lastname: `Last${id}`,
+      name: overrides.name ?? `User${id}`,
+      lastname: overrides.lastname ?? `Last${id}`,
       username: overrides.username ?? `user_${id}`,
       email: overrides.email ?? `user_${id}@test.com`,
       password:
@@ -41,6 +47,10 @@ export async function makeUser(
       isPrivate: overrides.isPrivate ?? false,
       isPremium: overrides.isPremium ?? false,
       role: overrides.role ?? 'USER',
+      accountStatus: overrides.accountStatus ?? 'ACTIVE',
+      deactivatedAt: overrides.deactivatedAt ?? null,
+      scheduledDeletionAt: overrides.scheduledDeletionAt ?? null,
+      anonymizedAt: overrides.anonymizedAt ?? null,
     },
   })
 }

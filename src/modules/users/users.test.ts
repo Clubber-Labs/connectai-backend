@@ -757,3 +757,332 @@ describe('rate limit em POST /users', () => {
     expect(blocked.statusCode).toBe(429)
   })
 })
+
+describe('ciclo de vida da conta', () => {
+  it('POST /users/me/deactivate desativa a conta', async () => {
+    const user = await makeUser()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/users/me/deactivate',
+      headers: { authorization: `Bearer ${token(app, user.id)}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ accountStatus: 'DEACTIVATED' })
+
+    const reloaded = await testPrisma.user.findUnique({
+      where: { id: user.id },
+      select: { accountStatus: true, deactivatedAt: true },
+    })
+    expect(reloaded?.accountStatus).toBe('DEACTIVATED')
+    expect(reloaded?.deactivatedAt).not.toBeNull()
+  })
+
+  it('POST /users/me/deactivate é idempotente', async () => {
+    const user = await makeUser()
+    const headers = { authorization: `Bearer ${token(app, user.id)}` }
+
+    await app.inject({ method: 'POST', url: '/users/me/deactivate', headers })
+    const res = await app.inject({
+      method: 'POST',
+      url: '/users/me/deactivate',
+      headers,
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ accountStatus: 'DEACTIVATED' })
+  })
+
+  it('DELETE /users/:id agenda exclusão com senha correta', async () => {
+    const user = await makeUser()
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/users/${user.id}`,
+      headers: { authorization: `Bearer ${token(app, user.id)}` },
+      body: { password: 'senha123' },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body.accountStatus).toBe('PENDING_DELETION')
+    expect(new Date(body.scheduledDeletionAt).getTime()).toBeGreaterThan(
+      Date.now(),
+    )
+
+    const reloaded = await testPrisma.user.findUnique({
+      where: { id: user.id },
+      select: { accountStatus: true },
+    })
+    expect(reloaded?.accountStatus).toBe('PENDING_DELETION')
+  })
+
+  it('DELETE /users/:id retorna 400 sem senha quando a conta tem senha', async () => {
+    const user = await makeUser()
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/users/${user.id}`,
+      headers: { authorization: `Bearer ${token(app, user.id)}` },
+      body: {},
+    })
+
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('DELETE /users/:id retorna 401 com senha incorreta', async () => {
+    const user = await makeUser()
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/users/${user.id}`,
+      headers: { authorization: `Bearer ${token(app, user.id)}` },
+      body: { password: 'errada' },
+    })
+
+    expect(res.statusCode).toBe(401)
+  })
+
+  it('DELETE /users/:id dispensa senha para conta social-only', async () => {
+    const user = await makeUser({ password: null })
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/users/${user.id}`,
+      headers: { authorization: `Bearer ${token(app, user.id)}` },
+      body: {},
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().accountStatus).toBe('PENDING_DELETION')
+  })
+
+  it('DELETE /users/:id de outro usuário retorna 403', async () => {
+    const owner = await makeUser()
+    const other = await makeUser()
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/users/${owner.id}`,
+      headers: { authorization: `Bearer ${token(app, other.id)}` },
+      body: { password: 'senha123' },
+    })
+
+    expect(res.statusCode).toBe(403)
+  })
+
+  it('DELETE /users/:id é idempotente mantendo o scheduledDeletionAt', async () => {
+    const user = await makeUser()
+    const headers = { authorization: `Bearer ${token(app, user.id)}` }
+
+    const first = await app.inject({
+      method: 'DELETE',
+      url: `/users/${user.id}`,
+      headers,
+      body: { password: 'senha123' },
+    })
+    const second = await app.inject({
+      method: 'DELETE',
+      url: `/users/${user.id}`,
+      headers,
+      body: { password: 'senha123' },
+    })
+
+    expect(second.statusCode).toBe(200)
+    expect(second.json().scheduledDeletionAt).toBe(
+      first.json().scheduledDeletionAt,
+    )
+  })
+
+  it('POST /users/me/reactivate reativa conta DEACTIVATED', async () => {
+    const user = await makeUser({
+      accountStatus: 'DEACTIVATED',
+      deactivatedAt: new Date(),
+    })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/users/me/reactivate',
+      headers: { authorization: `Bearer ${token(app, user.id)}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().accountStatus).toBe('ACTIVE')
+  })
+
+  it('POST /users/me/reactivate é idempotente para conta ACTIVE', async () => {
+    const user = await makeUser()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/users/me/reactivate',
+      headers: { authorization: `Bearer ${token(app, user.id)}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().accountStatus).toBe('ACTIVE')
+  })
+
+  it('POST /users/me/reactivate retorna 409 para conta ANONYMIZED', async () => {
+    const user = await makeUser({
+      accountStatus: 'ANONYMIZED',
+      anonymizedAt: new Date(),
+    })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/users/me/reactivate',
+      headers: { authorization: `Bearer ${token(app, user.id)}` },
+    })
+
+    expect(res.statusCode).toBe(409)
+  })
+
+  it('GET /users/me expõe accountStatus e scheduledDeletionAt', async () => {
+    const user = await makeUser()
+    const headers = { authorization: `Bearer ${token(app, user.id)}` }
+
+    await app.inject({
+      method: 'DELETE',
+      url: `/users/${user.id}`,
+      headers,
+      body: { password: 'senha123' },
+    })
+
+    const res = await app.inject({ method: 'GET', url: '/users/me', headers })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().accountStatus).toBe('PENDING_DELETION')
+    expect(res.json().scheduledDeletionAt).not.toBeNull()
+  })
+})
+
+describe('visibilidade de contas inativas', () => {
+  it('GET /users/:id de conta DEACTIVATED retorna 404', async () => {
+    const viewer = await makeUser()
+    const target = await makeUser({ accountStatus: 'DEACTIVATED' })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/users/${target.id}`,
+      headers: { authorization: `Bearer ${token(app, viewer.id)}` },
+    })
+
+    expect(res.statusCode).toBe(404)
+  })
+
+  it('GET /users não lista contas inativas', async () => {
+    const active = await makeUser()
+    await makeUser({ accountStatus: 'DEACTIVATED' })
+    await makeUser({ accountStatus: 'PENDING_DELETION' })
+    await makeUser({ accountStatus: 'ANONYMIZED' })
+
+    const res = await app.inject({ method: 'GET', url: '/users' })
+
+    expect(res.statusCode).toBe(200)
+    const ids = res.json().data.map((u: { id: string }) => u.id)
+    expect(ids).toContain(active.id)
+    expect(ids).toHaveLength(1)
+  })
+
+  it('GET /users/search não retorna contas inativas', async () => {
+    const viewer = await makeUser()
+    const active = await makeUser({ username: 'visivel_busca' })
+    await makeUser({ username: 'oculto_busca', accountStatus: 'DEACTIVATED' })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/users/search?q=_busca',
+      headers: { authorization: `Bearer ${token(app, viewer.id)}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const ids = res.json().data.map((u: { id: string }) => u.id)
+    expect(ids).toContain(active.id)
+    expect(ids).toHaveLength(1)
+  })
+})
+
+describe('GET /users/me — hasPassword', () => {
+  it('expõe hasPassword=true e nunca o hash da senha', async () => {
+    const user = await makeUser()
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/users/me',
+      headers: { authorization: `Bearer ${token(app, user.id)}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().hasPassword).toBe(true)
+    expect(res.json()).not.toHaveProperty('password')
+  })
+
+  it('hasPassword=false para conta social-only', async () => {
+    const user = await makeUser({ password: null })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/users/me',
+      headers: { authorization: `Bearer ${token(app, user.id)}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().hasPassword).toBe(false)
+  })
+})
+
+describe('motivo de saída (só no fluxo de exclusão)', () => {
+  it('DELETE /users/:id registra o motivo em AccountLifecycleLog', async () => {
+    const user = await makeUser()
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/users/${user.id}`,
+      headers: { authorization: `Bearer ${token(app, user.id)}` },
+      body: { password: 'senha123', reason: 'gasto muito tempo no app' },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const logs = await testPrisma.accountLifecycleLog.findMany({
+      where: { userId: user.id },
+    })
+    expect(logs).toHaveLength(1)
+    expect(logs[0]).toMatchObject({
+      action: 'DELETION_SCHEDULED',
+      reason: 'gasto muito tempo no app',
+    })
+  })
+
+  it('DELETE /users/:id sem motivo grava log com reason null', async () => {
+    const user = await makeUser()
+
+    await app.inject({
+      method: 'DELETE',
+      url: `/users/${user.id}`,
+      headers: { authorization: `Bearer ${token(app, user.id)}` },
+      body: { password: 'senha123' },
+    })
+
+    const logs = await testPrisma.accountLifecycleLog.findMany({
+      where: { userId: user.id },
+    })
+    expect(logs).toHaveLength(1)
+    expect(logs[0].reason).toBeNull()
+  })
+
+  it('desativar NÃO registra motivo (sem log)', async () => {
+    const user = await makeUser()
+
+    await app.inject({
+      method: 'POST',
+      url: '/users/me/deactivate',
+      headers: { authorization: `Bearer ${token(app, user.id)}` },
+    })
+
+    const logs = await testPrisma.accountLifecycleLog.findMany({
+      where: { userId: user.id },
+    })
+    expect(logs).toHaveLength(0)
+  })
+})
