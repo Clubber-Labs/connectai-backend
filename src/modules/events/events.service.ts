@@ -57,16 +57,16 @@ type NormalizedListResult = {
  * Proximidade (orderBy=distance e/ou radiusKm) deixou de fazer bypass: as
  * coordenadas são "snapadas" a uma grade (~110m) antes de montar a chave e a
  * query, então vizinhos compartilham a mesma entrada. O snap afeta ordenação
- * e chave; no radiusKm vale tolerância de borda ~156m (ver snapToGrid).
+ * e chave; no radiusKm vale tolerância de borda ~79m (ver snapToGrid).
  */
 export async function listEvents(query: ListEventsQuery, viewerId?: string) {
   const snapped =
     query.nearLat !== undefined && query.nearLng !== undefined
       ? snapToGrid(query.nearLat, query.nearLng)
       : undefined
-  // Só o CENTRO é snapado (tolerância de borda ~156m, ver snapToGrid). O
+  // Só o CENTRO é snapado (tolerância de borda ~79m, ver snapToGrid). O
   // radiusKm fica EXATO no filtro e na chave: bucketizar o raio expandiria a
-  // busca em km (não ~156m) e colidiria raios distintos na mesma entrada.
+  // busca em km (não ~79m) e colidiria raios distintos na mesma entrada.
   const effectiveQuery: ListEventsQuery = snapped
     ? { ...query, nearLat: snapped.lat, nearLng: snapped.lng }
     : query

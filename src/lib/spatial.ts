@@ -42,8 +42,9 @@ export const MAX_TIE_DRAIN = 100
  * próximos caem na mesma célula → compartilham a entrada de cache, o que
  * destrava o hit-rate da busca por proximidade (RNF05.2). O snap afeta a
  * ordenação e a chave de cache; no filtro por `radiusKm` aceita-se tolerância
- * de borda de até ~156m (diagonal da célula) — "raio" é intenção difusa
- * ("perto de mim") e o próprio GPS erra mais que isso.
+ * de borda de até ~79m (o centro snapado fica a no máximo meia-diagonal da
+ * célula do ponto original) — "raio" é intenção difusa ("perto de mim") e o
+ * próprio GPS erra mais que isso.
  */
 export function snapToGrid(
   lat: number,
@@ -58,9 +59,10 @@ export type DistanceCursor = { dist: number; id: string }
 
 export type EventDistanceRow = { id: string; dist: number }
 
-// `events.id` é UUID no Postgres. Validar no decode evita "ERROR: invalid
-// input syntax for type uuid" virar 500 quando o cliente manda cursor
-// adulterado — o controller-level decode null → 400 "Cursor inválido".
+// `events.id` é TEXT contendo um UUID canônico (String @id @default(uuid()),
+// sem @db.Uuid). Validar o formato no decode rejeita cursor adulterado cedo
+// (decode null → 400 "Cursor inválido" no repository) em vez de produzir
+// páginas silenciosamente vazias/estranhas com um id malformado.
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
