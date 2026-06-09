@@ -220,7 +220,7 @@ async function main() {
     },
   })
 
-  const usersData = Array.from({ length: 12 }).map((_, i) => {
+  const usersData = Array.from({ length: 24 }).map((_, i) => {
     const firstName = faker.person.firstName()
     const lastName = faker.person.lastName()
     return {
