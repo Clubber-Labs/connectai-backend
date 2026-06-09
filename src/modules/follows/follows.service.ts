@@ -1,3 +1,4 @@
+import { notifyFromActor } from '../notifications/notifications.service'
 import { findUserById } from '../users/users.repository'
 import {
   acceptFollow,
@@ -29,7 +30,13 @@ export async function followUser(followerId: string, followingId: string) {
   }
 
   const status = targetUser.isPrivate ? 'PENDING' : 'ACCEPTED'
-  return createFollow(followerId, followingId, status)
+  const follow = await createFollow(followerId, followingId, status)
+  await notifyFromActor({
+    recipientId: followingId,
+    actorId: followerId,
+    type: status === 'PENDING' ? 'FOLLOW_REQUEST' : 'NEW_FOLLOWER',
+  })
+  return follow
 }
 
 export async function approveFollowRequest(
@@ -43,7 +50,13 @@ export async function approveFollowRequest(
   if (follow.status !== 'PENDING') {
     throw { statusCode: 409, message: 'Solicitação já foi processada' }
   }
-  return acceptFollow(follow.id)
+  const accepted = await acceptFollow(follow.id)
+  await notifyFromActor({
+    recipientId: follow.followerId,
+    actorId: ownerId,
+    type: 'FOLLOW_ACCEPTED',
+  })
+  return accepted
 }
 
 export async function rejectFollowRequest(ownerId: string, followerId: string) {

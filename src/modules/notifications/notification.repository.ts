@@ -96,6 +96,20 @@ export async function notificationExists(userId: string, id: string) {
   return found !== null
 }
 
+/** Resumo do autor para montar a copy + payload da notificação (sem refetch no cliente). */
+export async function findActorSummary(userId: string) {
+  return prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      name: true,
+      lastname: true,
+      username: true,
+      avatarUrl: true,
+    },
+  })
+}
+
 /** Expurgo de retenção (LGPD): remove notificações criadas antes do corte. */
 export async function deleteNotificationsOlderThan(cutoff: Date) {
   const result = await prisma.notification.deleteMany({

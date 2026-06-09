@@ -11,12 +11,14 @@ import {
 import {
   countUnreadNotifications,
   createNotificationIfNew,
+  findActorSummary,
   listNotifications,
   markAllNotificationsRead,
   markNotificationRead,
   type NotificationCursor,
   notificationExists,
 } from './notification.repository'
+import { socialNotificationContent } from './notification-content'
 import type { ListNotificationsQuery } from './notifications.schema'
 
 export type SocialNotificationInput = {
@@ -108,6 +110,61 @@ export async function dispatchSocial(
     logger.warn(
       { err, type: input.type, recipientId: input.recipientId },
       'dispatch de notificação falhou',
+    )
+  }
+}
+
+export type ActorNotificationInput = {
+  recipientId: string
+  actorId: string
+  type: NotificationType
+  eventId?: string | null
+  postId?: string | null
+  commentId?: string | null
+}
+
+/**
+ * Atalho dos gatilhos sociais (entrega 3): resolve o autor, monta a copy e
+ * delega ao dispatchSocial. Os serviços de origem (follow, comentário, reação,
+ * presença, convite) só passam o tipo + ids — sem texto, sem boilerplate.
+ * Best-effort: nunca quebra a ação principal. O self-guard adiantado evita o
+ * fetch do autor quando autor == destinatário (caso comum: comentar no próprio
+ * conteúdo). O block-guard fica no dispatchSocial.
+ */
+export async function notifyFromActor(
+  input: ActorNotificationInput,
+): Promise<void> {
+  try {
+    if (!env.NOTIFICATIONS_ENABLED) return
+    if (input.actorId === input.recipientId) return
+
+    const actor = await findActorSummary(input.actorId)
+    if (!actor) return
+
+    const { title, body } = socialNotificationContent(input.type, actor)
+    await dispatchSocial({
+      recipientId: input.recipientId,
+      actorId: input.actorId,
+      type: input.type,
+      eventId: input.eventId,
+      postId: input.postId,
+      commentId: input.commentId,
+      title,
+      body,
+      data: {
+        actor: {
+          id: actor.id,
+          name: actor.name,
+          lastname: actor.lastname,
+          username: actor.username,
+          avatarUrl: actor.avatarUrl,
+        },
+      },
+    })
+  } catch (err) {
+    logger.warn(
+      { err, type: input.type, recipientId: input.recipientId },
+      'notifyFromActor falhou',
     )
   }
 }
