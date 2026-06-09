@@ -18,7 +18,10 @@ import {
   type NotificationCursor,
   notificationExists,
 } from './notification.repository'
-import { socialNotificationContent } from './notification-content'
+import {
+  type SocialNotificationKind,
+  socialNotificationContent,
+} from './notification-content'
 import type { ListNotificationsQuery } from './notifications.schema'
 
 export type SocialNotificationInput = {
@@ -38,6 +41,13 @@ export type SocialNotificationInput = {
  * Chave de dedupe determinística por (tipo + alvos). Dois gatilhos idênticos
  * (retry, duplo clique) colapsam na mesma notificação; gatilhos distintos (outro
  * comentário, outro evento) geram chaves diferentes.
+ *
+ * Trade-off conhecido para tipos SEM alvo distinto (NEW_FOLLOWER / FOLLOW_REQUEST):
+ * a chave é só (tipo, actor, recipient), então unfollow→refollow NÃO re-notifica
+ * enquanto a linha existir. É bounded pela retenção (a notificação some após
+ * NOTIFY_RETENTION_DAYS e libera a chave) e funciona como anti-spam de
+ * follow/unfollow. Re-notificação imediata exigiria a identidade do follow na
+ * chave — issue de follow-up.
  */
 function buildDedupeKey(input: SocialNotificationInput): string {
   return [
@@ -117,7 +127,8 @@ export async function dispatchSocial(
 export type ActorNotificationInput = {
   recipientId: string
   actorId: string
-  type: NotificationType
+  // Só tipos sociais (com autor); EVENT_NEARBY (proximidade) não passa por aqui.
+  type: SocialNotificationKind
   eventId?: string | null
   postId?: string | null
   commentId?: string | null

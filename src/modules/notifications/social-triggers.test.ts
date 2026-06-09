@@ -13,6 +13,7 @@ import {
   makeBlock,
   makeComment,
   makeEvent,
+  makePost,
   makeUser,
 } from '../../test/factories'
 import { testPrisma } from '../../test/prisma'
@@ -23,16 +24,14 @@ import {
 } from '../comments/comments.service'
 import { inviteToEvent } from '../event-invites/event-invites.service'
 import { approveFollowRequest, followUser } from '../follows/follows.service'
-import { likeComment, likeEvent } from '../reactions/reactions.service'
+import {
+  likeComment,
+  likeEvent,
+  likePost,
+} from '../reactions/reactions.service'
 
 function notifFor(userId: string, type: NotificationType) {
   return testPrisma.notification.findFirst({ where: { userId, type } })
-}
-
-async function makePost(authorId: string, eventId: string) {
-  return testPrisma.post.create({
-    data: { authorId, eventId, content: 'Post de teste' },
-  })
 }
 
 beforeEach(() => {
@@ -139,6 +138,19 @@ describe('gatilhos de reação', () => {
 
     const n = await notifFor(author.id, 'EVENT_REACTION')
     expect(n).not.toBeNull()
+    expect(n?.actorId).toBe(liker.id)
+  })
+
+  it('curtir post notifica o autor do post (POST_REACTION)', async () => {
+    const [author, liker] = await Promise.all([makeUser(), makeUser()])
+    const event = await makeEvent(author.id, { isPublic: true })
+    const post = await makePost(author.id, event.id)
+
+    await likePost(liker.id, post.id)
+
+    const n = await notifFor(author.id, 'POST_REACTION')
+    expect(n).not.toBeNull()
+    expect(n?.postId).toBe(post.id)
     expect(n?.actorId).toBe(liker.id)
   })
 

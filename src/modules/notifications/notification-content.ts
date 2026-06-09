@@ -14,8 +14,11 @@ function displayName(actor: NotificationActor): string {
  * autor. Centraliza o texto num único lugar — os gatilhos só passam o tipo + ids.
  * EVENT_NEARBY (proximidade) tem conteúdo próprio na entrega 5 (sem autor).
  */
+/** Tipos sociais (com autor). EVENT_NEARBY é proximidade, sem autor — entrega 5. */
+export type SocialNotificationKind = Exclude<NotificationType, 'EVENT_NEARBY'>
+
 export function socialNotificationContent(
-  type: NotificationType,
+  type: SocialNotificationKind,
   actor: NotificationActor,
 ): { title: string; body: string } {
   const who = displayName(actor)
@@ -46,7 +49,8 @@ export function socialNotificationContent(
       return { title: 'Nova curtida', body: `${who} curtiu seu comentário` }
     case 'EVENT_ATTENDANCE':
       return { title: 'Nova presença', body: `${who} vai ao seu evento` }
-    default:
-      return { title: 'Nova notificação', body: who }
   }
+  // Sem default de propósito: como `type` é o subconjunto social exato, um
+  // NotificationType social novo sem case aqui quebra a compilação ("nem todos
+  // os caminhos retornam") em vez de cair num texto genérico silencioso.
 }
