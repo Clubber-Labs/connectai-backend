@@ -22,3 +22,26 @@ export type RegisterDeviceBody = z.infer<typeof registerDeviceSchema>
 export const deviceTokenParamsSchema = z.object({ token: z.string().min(1) })
 
 export const notificationIdParamsSchema = z.object({ id: z.string().uuid() })
+
+// Geohash base32 (sem a/i/l/o) de precisão EXATA 6 (~1.2km). Precisão fixa
+// porque o over-notify da query de proximidade é calibrado para ela; mais fino
+// reduz a minimização (privacidade), mais grosso fura o raio. O app calcula e
+// envia só o geohash — a coordenada precisa nunca chega ao servidor.
+export const GEOHASH6_REGEX = /^[0-9bcdefghjkmnpqrstuvwxyz]{6}$/
+
+export const updateLocationSchema = z.object({
+  geohash: z.string().regex(GEOHASH6_REGEX, 'geohash inválido (precisão 6)'),
+})
+
+export type UpdateLocationBody = z.infer<typeof updateLocationSchema>
+
+export const updateNotificationPrefsSchema = z.object({
+  // Raio de interesse (km). O teto (NOTIFY_MAX_RADIUS_KM, que é também a constante
+  // do pré-filtro indexável) é enforçado no service — fonte única do invariante
+  // notifyRadiusKm ≤ NOTIFY_MAX_RADIUS_KM, em vez de um literal que não acompanha o env.
+  notifyRadiusKm: z.coerce.number().int().min(2),
+})
+
+export type UpdateNotificationPrefsBody = z.infer<
+  typeof updateNotificationPrefsSchema
+>

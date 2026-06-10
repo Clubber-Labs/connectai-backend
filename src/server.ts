@@ -42,9 +42,15 @@ import { featuredEventsRoutes } from './modules/featured-events/featured-events.
 import { feedRoutes } from './modules/feed/feed.routes'
 import { followsRoutes } from './modules/follows/follows.routes'
 import { healthRoutes } from './modules/health/health.routes'
+import { startLocationRetentionReconciler } from './modules/notifications/location-retention.reconciler'
+import {
+  startNotificationsWorker,
+  stopNotificationsWorker,
+} from './modules/notifications/notification-queue'
 import { startNotificationRetentionReconciler } from './modules/notifications/notification-retention.reconciler'
 import { notificationsGateway } from './modules/notifications/notifications.gateway'
 import { notificationsRoutes } from './modules/notifications/notifications.routes'
+import { startPushReceiptsReconciler } from './modules/notifications/push-receipts.reconciler'
 import { startPasswordResetCleanupReconciler } from './modules/password-reset/password-reset.reconciler'
 import { passwordResetRoutes } from './modules/password-reset/password-reset.routes'
 import { postsRoutes } from './modules/posts/posts.routes'
@@ -163,6 +169,7 @@ app.register(chatGateway)
 app.register(notificationsGateway)
 
 app.addHook('onClose', async () => {
+  await stopNotificationsWorker()
   if (redis) await redis.quit()
 })
 
@@ -199,5 +206,20 @@ app.listen({ port: env.PORT, host: '0.0.0.0' }).then(() => {
       env.NOTIFY_RETENTION_CLEANUP_INTERVAL_MS,
       env.NOTIFY_RETENTION_DAYS,
     )
+  }
+  if (env.NODE_ENV !== 'test' && env.NOTIFY_LOCATION_CLEANUP_ENABLED) {
+    startLocationRetentionReconciler(
+      env.NOTIFY_LOCATION_CLEANUP_INTERVAL_MS,
+      env.NOTIFY_LOCATION_TTL_DAYS,
+    )
+  }
+  if (env.NODE_ENV !== 'test' && env.NOTIFICATIONS_ENABLED) {
+    startNotificationsWorker()
+    if (env.NOTIFY_RECEIPTS_ENABLED) {
+      startPushReceiptsReconciler(
+        env.NOTIFY_RECEIPTS_INTERVAL_MS,
+        env.NOTIFY_RECEIPTS_DELAY_MS,
+      )
+    }
   }
 })

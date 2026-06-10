@@ -145,6 +145,39 @@ const baseSchema = z.object({
     .enum(['true', 'false', '1', '0'])
     .default('true')
     .transform((v) => v === 'true' || v === '1'),
+  // Proximidade. NOTIFY_MAX_RADIUS_KM é o teto do raio por usuário E a constante
+  // do pré-filtro indexável (ST_DWithin) da query invertida. NOTIFY_LOCATION_TTL_DAYS
+  // = janela de frescor; localização mais velha não recebe push de proximidade e
+  // é expurgada pelo reconciler (minimização LGPD).
+  NOTIFY_MAX_RADIUS_KM: z.coerce.number().int().positive().default(50),
+  NOTIFY_LOCATION_TTL_DAYS: z.coerce.number().int().positive().default(90),
+  NOTIFY_LOCATION_CLEANUP_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(3600000),
+  NOTIFY_LOCATION_CLEANUP_ENABLED: z
+    .enum(['true', 'false', '1', '0'])
+    .default('true')
+    .transform((v) => v === 'true' || v === '1'),
+  // Fan-out de proximidade + receipts. BATCH_SIZE = tamanho da página da query
+  // invertida. RECEIPTS_DELAY_MS = idade mínima de um ticket antes de checar o
+  // receipt (o Expo recomenda ~15min). RECEIPTS_INTERVAL_MS = tick do reconciler.
+  NOTIFY_FANOUT_BATCH_SIZE: z.coerce.number().int().positive().default(500),
+  NOTIFY_RECEIPTS_DELAY_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(15 * 60 * 1000),
+  NOTIFY_RECEIPTS_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(5 * 60 * 1000),
+  NOTIFY_RECEIPTS_ENABLED: z
+    .enum(['true', 'false', '1', '0'])
+    .default('true')
+    .transform((v) => v === 'true' || v === '1'),
 })
 
 const cloudinarySchema = z.object({
@@ -274,4 +307,13 @@ export const env = {
   NOTIFY_RETENTION_CLEANUP_INTERVAL_MS:
     parsed.NOTIFY_RETENTION_CLEANUP_INTERVAL_MS,
   NOTIFY_RETENTION_CLEANUP_ENABLED: parsed.NOTIFY_RETENTION_CLEANUP_ENABLED,
+  NOTIFY_MAX_RADIUS_KM: parsed.NOTIFY_MAX_RADIUS_KM,
+  NOTIFY_LOCATION_TTL_DAYS: parsed.NOTIFY_LOCATION_TTL_DAYS,
+  NOTIFY_LOCATION_CLEANUP_INTERVAL_MS:
+    parsed.NOTIFY_LOCATION_CLEANUP_INTERVAL_MS,
+  NOTIFY_LOCATION_CLEANUP_ENABLED: parsed.NOTIFY_LOCATION_CLEANUP_ENABLED,
+  NOTIFY_FANOUT_BATCH_SIZE: parsed.NOTIFY_FANOUT_BATCH_SIZE,
+  NOTIFY_RECEIPTS_DELAY_MS: parsed.NOTIFY_RECEIPTS_DELAY_MS,
+  NOTIFY_RECEIPTS_INTERVAL_MS: parsed.NOTIFY_RECEIPTS_INTERVAL_MS,
+  NOTIFY_RECEIPTS_ENABLED: parsed.NOTIFY_RECEIPTS_ENABLED,
 } as const

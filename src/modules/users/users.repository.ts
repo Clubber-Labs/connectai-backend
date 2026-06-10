@@ -37,6 +37,10 @@ const userPrivateProfileSelect = {
   accountStatus: true,
   deactivatedAt: true,
   scheduledDeletionAt: true,
+  // Preferência de notificação por proximidade — o app lê o raio atual no
+  // /users/me (ex.: após troca de device). Select privado: não vaza em perfis
+  // de terceiros.
+  notifyRadiusKm: true,
 } as const
 
 // Campos do estado de conta usados internamente pelas transições de ciclo de
@@ -140,6 +144,60 @@ export async function updateUser(id: string, data: Prisma.UserUpdateInput) {
     data,
     select: userPrivateProfileSelect,
   })
+}
+
+/**
+ * Grava a localização grosseira (geohash) do usuário. A coluna `location`
+ * geography é recomputada sozinha (GENERATED). locationUpdatedAt alimenta o
+ * filtro de freshness/TTL da query de proximidade.
+ */
+export async function updateUserLocation(
+  id: string,
+  geohash: string,
+  now: Date = new Date(),
+) {
+  return prisma.user.update({
+    where: { id },
+    data: { locationGeohash: geohash, locationUpdatedAt: now },
+    select: { id: true, locationGeohash: true, locationUpdatedAt: true },
+  })
+}
+
+/**
+ * Zera a localização do usuário (revogação de consentimento, anonimização ou
+ * expurgo por retenção). `tx` permite rodar dentro de uma transação. A coluna
+ * `location` geography vira NULL sozinha quando locationGeohash é NULL.
+ */
+export async function clearUserLocation(
+  id: string,
+  tx: Prisma.TransactionClient = prisma,
+) {
+  return tx.user.update({
+    where: { id },
+    data: { locationGeohash: null, locationUpdatedAt: null },
+    select: { id: true },
+  })
+}
+
+/** Atualiza o raio de interesse (km) das notificações de proximidade. */
+export async function updateNotifyRadius(id: string, radiusKm: number) {
+  return prisma.user.update({
+    where: { id },
+    data: { notifyRadiusKm: radiusKm },
+    select: { id: true, notifyRadiusKm: true },
+  })
+}
+
+/** Expurgo (retenção/minimização LGPD): zera localizações mais velhas que o corte. */
+export async function clearStaleUserLocations(cutoff: Date) {
+  const result = await prisma.user.updateMany({
+    where: {
+      locationUpdatedAt: { lt: cutoff },
+      locationGeohash: { not: null },
+    },
+    data: { locationGeohash: null, locationUpdatedAt: null },
+  })
+  return result.count
 }
 
 /**
@@ -318,6 +376,10 @@ export async function anonymizeUserTx(
         avatarKey: null,
         birthdate: null,
         lastSeenAt: null,
+        // Localização: dado pessoal — zerada na anonimização (a coluna geography
+        // `location` recomputa para NULL sozinha quando locationGeohash é NULL).
+        locationGeohash: null,
+        locationUpdatedAt: null,
         isPrivate: true,
         accountStatus: 'ANONYMIZED',
         anonymizedAt: now,
