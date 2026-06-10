@@ -104,13 +104,36 @@ Run reproduzido com o harness corrigido (`node dist/server.js` em
   concentrado que 90/10 ultrapassa 90%. (Substitui o "99,4%" anterior, que vinha
   de poucas células e era trivial por construção.)
 
-**Achado:** `exp_radius` é o gargalo (1,05 s vs. 583 ms do distance vs. 70 ms do
-feed). O caminho `radiusKm` hidrata o **conjunto inteiro** do raio (até o cap de
-1000) com includes pesados, enquanto o `distance` hidrata só `limit (+1)` via
-keyset. Isso é exatamente o que motiva a **Fase 3 (enxugar o payload da lista)**,
-deixada condicional à medição no plano — agora a medição justifica fazê-la.
-Os valores são de um sandbox compartilhado (ver ressalva de hardware); o sinal
-**relativo** (radius ≫ distance ≫ feed) é o que vale.
+**Achado (com EXPLAIN ANALYZE, seed 10k):** `exp_radius` é o caminho mais lento
+sob carga (1,05 s vs. 583 ms do distance vs. 70 ms do feed), mas **não é query
+lenta nem over-hidratação**. Profiling de uma request típica (737 eventos num
+raio de 5 km do centro SP):
+
+| Query | Plano | Tempo |
+|---|---|---|
+| `ST_DWithin` → ids | Bitmap Index Scan em `events_location_idx` | **2,6 ms** |
+| `findMany` (id IN 737, ORDER BY date, LIMIT 21) | top-N heapsort | **4,6 ms** |
+
+As duas são ms-rápidas (índice usado, hidratação já limitada a `limit+1` pelo
+`take`). A inflação para 1,05 s **sob 100 VUs** é **contenção de pool**: o caminho
+`radiusKm` faz **dois round-trips sequenciais** (busca espacial → hidratação),
+segurando a conexão por mais tempo que o caminho `distance` (keyset de 1 query);
+com `connection_limit=20` × 100 VUs, isso enfileira.
+
+**Por que NÃO é a Fase 3 (enxugar payload):** o feed do app mobile **consome**
+`recentComments[0]`, `images[0]` e `author` no `EventCard` — cortar o payload
+quebraria a UI. A Fase 3 estava condicionada a "o mobile não consumir esses
+campos"; ele consome, então a Fase 3 fica **descartada**.
+
+**Fix de raiz (escopo separado):** unificar o caminho `radiusKm + orderBy=date`
+numa **única query keyset** (igual ao `findPublicEventsByDistance`, mas ordenando
+por data) — `ST_DWithin` + `ORDER BY date` + keyset + `LIMIT` num SQL só,
+devolvendo já os ~21 IDs da página pra hidratar. Elimina 1 round-trip (corta o
+tempo de posse da conexão pela metade) e o re-sort de 737 linhas. Em produção o
+impacto é **limitado**: requests `radiusKm` são cacheadas (hit-rate ~89,6%), só
+o cache-miss paga o caminho de 2 queries. Por isso fica como **otimização
+planejada**, não bloqueante — coerente com a ressalva de hardware (o número
+absoluto é de sandbox; o relativo, radius ≫ distance, é o que orienta).
 
 ### 1. Cache de grade (RNF05.2 + RNF01.4)
 
