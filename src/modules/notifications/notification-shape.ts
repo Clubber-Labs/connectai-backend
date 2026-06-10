@@ -18,12 +18,6 @@ export function shapeNotification(n: Notification) {
 }
 
 /**
- * Chave de dedupe determinística por (tipo + alvos). Dois gatilhos idênticos
- * (retry, duplo clique) colapsam na mesma notificação; gatilhos distintos geram
- * chaves diferentes. Módulo puro para não acoplar o fan-out ao service (evita
- * ciclo de import notifications.service ↔ notification-queue ↔ proximity-fanout).
- */
-/**
  * `data` do push (payload do tap): o `data` persistido da notificação (actor,
  * etc.) + notificationId/type/ids de alvo não-nulos. Sem eles o app não roteia
  * o deep-link pro destino exato nem marca a notificação como lida. Só ids/tipo
@@ -45,6 +39,12 @@ export function buildPushData(n: Notification): Record<string, unknown> {
   }
 }
 
+/**
+ * Chave de dedupe determinística por (tipo + alvos). Dois gatilhos idênticos
+ * (retry, duplo clique) colapsam na mesma notificação; gatilhos distintos geram
+ * chaves diferentes. Módulo puro para não acoplar o fan-out ao service (evita
+ * ciclo de import notifications.service ↔ notification-queue ↔ proximity-fanout).
+ */
 export function notificationDedupeKey(parts: {
   type: NotificationType
   actorId?: string | null

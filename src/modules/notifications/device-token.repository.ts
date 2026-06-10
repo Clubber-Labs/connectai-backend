@@ -48,12 +48,14 @@ export async function findActiveDeviceTokensForUsers(userIds: string[]) {
 }
 
 /**
- * Soft-disable de um token (ex.: DeviceNotRegistered no ticket/receipt). Não
- * apaga — preserva auditoria e permite reativar se o app re-registrar o token.
+ * Soft-disable de tokens (ex.: DeviceNotRegistered no ticket/receipt), em lote
+ * — 1 UPDATE por chamada, não por token. Não apaga: preserva auditoria e
+ * permite reativar se o app re-registrar o token.
  */
-export async function invalidateDeviceToken(id: string, reason: string) {
+export async function invalidateDeviceTokens(ids: string[], reason: string) {
+  if (ids.length === 0) return 0
   const result = await prisma.deviceToken.updateMany({
-    where: { id, invalidatedAt: null },
+    where: { id: { in: ids }, invalidatedAt: null },
     data: { invalidatedAt: new Date(), invalidatedReason: reason },
   })
   return result.count

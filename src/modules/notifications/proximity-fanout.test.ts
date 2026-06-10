@@ -208,4 +208,16 @@ describe('runEventCreatedFanout', () => {
       await testPrisma.notification.count({ where: { type: 'EVENT_NEARBY' } }),
     ).toBe(0)
   })
+
+  it('evento cancelado não dispara fan-out', async () => {
+    const author = await makeUser()
+    await makeNearbyUser()
+    const event = await makeNearbyEvent(author.id, { canceledAt: new Date() })
+
+    const { notified } = await runEventCreatedFanout(event.id)
+    expect(notified).toBe(0)
+    expect(
+      await testPrisma.notification.count({ where: { type: 'EVENT_NEARBY' } }),
+    ).toBe(0)
+  })
 })

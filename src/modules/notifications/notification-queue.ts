@@ -37,7 +37,9 @@ export async function enqueueEventCreated(eventId: string): Promise<void> {
       'event.created',
       { kind: 'event.created', eventId },
       {
-        // jobId determinístico colapsa enqueues duplicados do mesmo evento.
+        // jobId determinístico colapsa enqueues duplicados do mesmo evento
+        // (válido p/ jobs WAITING/DELAYED; se já estiver ACTIVE, o segundo
+        // roda — a idempotência do fan-out garante que nada duplica).
         jobId: `event.created:${eventId}`,
         removeOnComplete: true,
         removeOnFail: 200,

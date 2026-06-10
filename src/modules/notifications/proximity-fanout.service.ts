@@ -78,19 +78,23 @@ export async function runEventCreatedFanout(
           })),
         )
 
-        // Foreground (best-effort) das que foram criadas.
+        // Foreground (best-effort) das que foram criadas — em paralelo: cada
+        // publish é um roundtrip Redis independente e nunca lança (catch
+        // interno); sequencial somaria ~1s por lote de 500.
         const created = await findNotificationsForEvent(
           newUserIds,
           eventId,
           'EVENT_NEARBY',
         )
-        for (const n of created) {
-          await realtime.publishNotification({
-            type: 'notification',
-            recipientId: n.userId,
-            notification: shapeNotification(n),
-          })
-        }
+        await Promise.all(
+          created.map((n) =>
+            realtime.publishNotification({
+              type: 'notification',
+              recipientId: n.userId,
+              notification: shapeNotification(n),
+            }),
+          ),
+        )
 
         // Push (a query invertida já garantiu consentimento). O data leva o
         // notificationId de CADA destinatário (deep-link + mark-as-read no
@@ -105,7 +109,9 @@ export async function runEventCreatedFanout(
             },
           })),
         )
-        notified += newUserIds.length
+        // `created` (linhas que de fato existem), não `newUserIds`: se o
+        // createMany pulou alguém numa corrida, o contador não infla.
+        notified += created.length
       }
 
       if (userIds.length < batchSize) break

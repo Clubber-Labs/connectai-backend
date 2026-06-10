@@ -5,13 +5,13 @@ import {
 } from '../../lib/push'
 import {
   findActiveDeviceTokensForUsers,
-  invalidateDeviceToken,
+  invalidateDeviceTokens,
 } from './device-token.repository'
 import {
   createPushTickets,
   findPendingReceipts,
   type NewPushTicket,
-  updatePushTicketStatus,
+  updatePushTicketsStatus,
 } from './push-ticket.repository'
 
 export type PushContent = {
@@ -55,6 +55,7 @@ export async function sendPushBatch(
 
   const idByToken = new Map(tokens.map((t) => [t.token, t.id]))
   const tickets: NewPushTicket[] = []
+  const toInvalidate: string[] = []
   for (const r of results) {
     const deviceTokenId = idByToken.get(r.token)
     if (!deviceTokenId) continue
@@ -63,13 +64,13 @@ export async function sendPushBatch(
     } else {
       tickets.push({ deviceTokenId, status: 'ERROR', error: r.error })
       if (classifyPushError(r.error) === 'remove_token') {
-        await invalidateDeviceToken(
-          deviceTokenId,
-          r.error ?? 'DeviceNotRegistered',
-        )
+        toInvalidate.push(deviceTokenId)
       }
     }
   }
+  // Em lote: 1 UPDATE para todos os tokens mortos (só DeviceNotRegistered
+  // classifica como remove_token) + 1 INSERT para os tickets.
+  await invalidateDeviceTokens(toInvalidate, 'DeviceNotRegistered')
   await createPushTickets(tickets)
   return { sent: tickets.length }
 }
@@ -103,7 +104,13 @@ export async function reconcilePushReceipts(opts: {
     .filter((id): id is string => id !== null)
   const receipts = await getPushService().getReceipts(receiptIds)
 
-  let invalidated = 0
+  // Agrupa fora do loop e atualiza em LOTE: com até 1000 tickets por tick,
+  // update por linha viraria ~2000 queries sequenciais. Erros são agrupados
+  // pelo código (vocabulário pequeno do Expo) pra preservar o error por linha
+  // num UPDATE por grupo.
+  const okIds: string[] = []
+  const errorIdsByCode = new Map<string, string[]>()
+  const toInvalidate: string[] = []
   for (const ticket of pending) {
     const receipt = ticket.receiptId
       ? receipts.get(ticket.receiptId)
@@ -111,17 +118,25 @@ export async function reconcilePushReceipts(opts: {
     if (!receipt) continue // ainda não disponível — deixa PENDING
 
     if (receipt.status === 'ok') {
-      await updatePushTicketStatus(ticket.id, 'OK')
+      okIds.push(ticket.id)
     } else {
-      await updatePushTicketStatus(ticket.id, 'ERROR', receipt.error)
+      const code = receipt.error ?? 'UnknownError'
+      const group = errorIdsByCode.get(code) ?? []
+      group.push(ticket.id)
+      errorIdsByCode.set(code, group)
       if (classifyPushError(receipt.error) === 'remove_token') {
-        await invalidateDeviceToken(
-          ticket.deviceTokenId,
-          receipt.error ?? 'DeviceNotRegistered',
-        )
-        invalidated++
+        toInvalidate.push(ticket.deviceTokenId)
       }
     }
   }
+
+  await updatePushTicketsStatus(okIds, 'OK')
+  for (const [code, ids] of errorIdsByCode) {
+    await updatePushTicketsStatus(ids, 'ERROR', code)
+  }
+  const invalidated = await invalidateDeviceTokens(
+    toInvalidate,
+    'DeviceNotRegistered',
+  )
   return { checked: pending.length, invalidated }
 }

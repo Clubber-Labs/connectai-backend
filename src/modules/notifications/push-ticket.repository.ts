@@ -1,9 +1,13 @@
 import { prisma } from '../../lib/prisma'
 
+// A coluna é String no schema (sem enum de banco — não vale uma migration);
+// o union na camada TS impede typo silencioso ('pending' não compila).
+export type PushTicketStatus = 'PENDING' | 'OK' | 'ERROR'
+
 export type NewPushTicket = {
   deviceTokenId: string
   receiptId?: string | null
-  status: string
+  status: PushTicketStatus
   error?: string | null
 }
 
@@ -29,15 +33,21 @@ export async function findPendingReceipts(cutoff: Date, limit: number) {
   })
 }
 
-export async function updatePushTicketStatus(
-  id: string,
-  status: string,
+/**
+ * Atualiza o status de VÁRIOS tickets de uma vez (1 UPDATE por grupo, não por
+ * ticket — o reconciler processa lotes de até 1000).
+ */
+export async function updatePushTicketsStatus(
+  ids: string[],
+  status: PushTicketStatus,
   error?: string | null,
 ) {
-  return prisma.pushTicket.update({
-    where: { id },
+  if (ids.length === 0) return 0
+  const result = await prisma.pushTicket.updateMany({
+    where: { id: { in: ids } },
     data: { status, error: error ?? null },
   })
+  return result.count
 }
 
 /** Expurgo de tickets antigos (já reconciliados ou obsoletos). */
