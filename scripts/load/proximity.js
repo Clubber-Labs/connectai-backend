@@ -84,7 +84,14 @@ function realisticPoint(hotProb) {
 
 function track(res) {
   serverErrorRate.add(res.status >= 500)
-  check(res, { 'status < 500': (r) => r.status < 500 })
+  // status 0 = sem resposta (conexão recusada / servidor caído). Sem este
+  // check, um servidor morto passa silencioso (0 < 500) e o run fica VERDE com
+  // p95=0s — falso verde. Exigir status != 0 (+ threshold de checks) transforma
+  // queda em falha do run; 4xx legítimo (cap/cursor) tem status real e não cai.
+  check(res, {
+    'recebeu resposta (servidor vivo)': (r) => r.status !== 0,
+    'sem erro 5xx': (r) => r.status < 500,
+  })
 }
 
 function metricsParams() {
@@ -125,7 +132,9 @@ const ramp = (startTime) => ({
 })
 
 const scenarios = {}
-const thresholds = {}
+// Guarda global: se o servidor cair/recusar conexão, os checks despencam e o
+// run FALHA (em vez de passar com p95=0s por falta de dados).
+const thresholds = { checks: ['rate>0.99'] }
 
 if (CACHE_ONLY) {
   scenarios.cache = {
