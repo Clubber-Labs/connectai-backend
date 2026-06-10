@@ -1137,7 +1137,7 @@ describe('routes E2E', () => {
         payload: {},
       })
 
-      expect(res.statusCode).toBe(200)
+      expect(res.statusCode).toBe(201)
       expect(res.json()).toEqual({
         url: 'https://checkout.stripe.com/test_e2e',
       })
@@ -1165,9 +1165,9 @@ describe('routes E2E', () => {
           headers,
           payload: {},
         })
-        // Pode ser 200 (sem subscription) ou 409 (subscription criada no 1º
+        // Pode ser 201 (checkout criado) ou 409 (subscription criada no 1º
         // request) — ambos contam como "request processado" pro rate-limit.
-        expect([200, 409]).toContain(ok.statusCode)
+        expect([201, 409]).toContain(ok.statusCode)
       }
 
       const blocked = await app.inject({

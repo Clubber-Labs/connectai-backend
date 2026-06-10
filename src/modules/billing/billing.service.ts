@@ -1,10 +1,12 @@
 import Stripe from 'stripe'
 import { env } from '../../lib/env'
-import { prisma } from '../../lib/prisma'
 import { STRIPE_API_VERSION, stripe } from '../../lib/stripe'
 import {
   findActiveSubscriptionByUserId,
+  findUserById,
   hasAnyPreviousSubscription,
+  setSubscriptionCancelAtPeriodEnd,
+  updateUserStripeCustomerId,
 } from './billing.repository'
 
 /**
@@ -26,7 +28,7 @@ function wrapStripeError(err: unknown): never {
 }
 
 async function findUserOrThrow(userId: string) {
-  const user = await prisma.user.findUnique({ where: { id: userId } })
+  const user = await findUserById(userId)
   if (!user) throw { statusCode: 404, message: 'Usuário não encontrado' }
   return user
 }
@@ -81,10 +83,7 @@ async function ensureStripeCustomer(user: {
       },
       { idempotencyKey: `customer_${user.id}` },
     )
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { stripeCustomerId: customer.id },
-    })
+    await updateUserStripeCustomerId(user.id, customer.id)
     return customer.id
   } catch (err) {
     return wrapStripeError(err)
@@ -176,10 +175,7 @@ export async function cancelSubscription(userId: string) {
     wrapStripeError(err)
   }
 
-  await prisma.subscription.update({
-    where: { id: sub.id },
-    data: { cancelAtPeriodEnd: true },
-  })
+  await setSubscriptionCancelAtPeriodEnd(sub.id, true)
 }
 
 export async function resumeSubscription(userId: string) {
@@ -206,10 +202,7 @@ export async function resumeSubscription(userId: string) {
     wrapStripeError(err)
   }
 
-  await prisma.subscription.update({
-    where: { id: sub.id },
-    data: { cancelAtPeriodEnd: false },
-  })
+  await setSubscriptionCancelAtPeriodEnd(sub.id, false)
 }
 
 /**

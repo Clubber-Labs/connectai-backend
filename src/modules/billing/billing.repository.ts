@@ -26,6 +26,33 @@ export async function hasAnyPreviousSubscription(userId: string) {
   return count > 0
 }
 
+/** Busca o user por id (camada de billing — service não toca Prisma). */
+export async function findUserById(userId: string) {
+  return prisma.user.findUnique({ where: { id: userId } })
+}
+
+/** Vincula o Customer do Stripe ao user. */
+export async function updateUserStripeCustomerId(
+  userId: string,
+  stripeCustomerId: string,
+) {
+  return prisma.user.update({
+    where: { id: userId },
+    data: { stripeCustomerId },
+  })
+}
+
+/** Marca/desmarca o cancelamento ao fim do período numa subscription local. */
+export async function setSubscriptionCancelAtPeriodEnd(
+  id: string,
+  cancelAtPeriodEnd: boolean,
+) {
+  return prisma.subscription.update({
+    where: { id },
+    data: { cancelAtPeriodEnd },
+  })
+}
+
 export async function isEventProcessed(stripeEventId: string) {
   const row = await prisma.webhookEvent.findUnique({
     where: { stripeEventId },

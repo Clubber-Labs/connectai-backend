@@ -14,9 +14,12 @@ export async function postCheckout(
   request: FastifyRequest,
   reply: FastifyReply,
 ) {
+  // Cast do body (padrão dominante dos controllers do projeto): o handler é
+  // função nomeada separada da rota, então não herda a inferência do
+  // ZodTypeProvider — a validação real é feita pelo `schema` na rota.
   const body = request.body as CreateCheckoutBody
   const result = await createCheckoutSession(request.user.sub, body)
-  return reply.status(200).send(result)
+  return reply.status(201).send(result)
 }
 
 export async function postSubscribe(

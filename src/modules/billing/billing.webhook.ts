@@ -91,10 +91,22 @@ type SubscriptionFields = {
   canceledAt: Date | null
 }
 
+// Retorna null quando o payload não tem priceId — uma subscription sem preço
+// não é acionável (não dá pra persistir Subscription coerente). O caller
+// descarta o evento. Em produção (produto de preço único) isso nunca ocorre;
+// o guard cobre payloads anômalos sem gravar `stripePriceId: ''` no banco.
 function mapStripeSubscription(
   sub: StripeSubscriptionLike,
-): SubscriptionFields {
+): SubscriptionFields | null {
   const firstItem = sub.items?.data?.[0]
+  const priceId = firstItem?.price?.id
+  if (!priceId) {
+    console.warn(
+      '[billing] mapStripeSubscription sem priceId, descartando evento',
+      { subscriptionId: sub.id, status: sub.status },
+    )
+    return null
+  }
   // API recente (2025+) moveu current_period_* da subscription pro item.
   // Fallback no nível raiz mantém compat com versões antigas e fixtures.
   // Em trial sem cobrança ainda, ambos podem ser null — usar trial_end ou
@@ -123,7 +135,7 @@ function mapStripeSubscription(
 
   return {
     stripeSubscriptionId: sub.id,
-    stripePriceId: firstItem?.price?.id ?? '',
+    stripePriceId: priceId,
     status: mapStatus(sub.status),
     trialEndsAt: sub.trial_end ? new Date(sub.trial_end * 1000) : null,
     currentPeriodStart: periodStart ? new Date(periodStart * 1000) : new Date(),
@@ -285,6 +297,7 @@ async function applyEvent(event: StripeEvent): Promise<void> {
           }
 
           const fields = mapStripeSubscription(preResolved)
+          if (!fields) return
 
           // Ordering check (igual aos outros cases): se já existe uma
           // subscription local mais nova, descarta o checkout retroativo.
@@ -318,6 +331,7 @@ async function applyEvent(event: StripeEvent): Promise<void> {
         case 'customer.subscription.deleted': {
           const sub = event.data.object as unknown as StripeSubscriptionLike
           const fields = mapStripeSubscription(sub)
+          if (!fields) return
 
           const existing = await tx.subscription.findUnique({
             where: { stripeSubscriptionId: fields.stripeSubscriptionId },
@@ -355,6 +369,7 @@ async function applyEvent(event: StripeEvent): Promise<void> {
         case 'invoice.payment_failed': {
           if (!preResolved) return
           const fields = mapStripeSubscription(preResolved)
+          if (!fields) return
 
           const existing = await tx.subscription.findUnique({
             where: { stripeSubscriptionId: fields.stripeSubscriptionId },
