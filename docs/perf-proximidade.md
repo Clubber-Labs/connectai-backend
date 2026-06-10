@@ -87,6 +87,31 @@ gargalo) estava **errada** — a medição redirecionou para a query KNN.
 > oficiais. A inconsistência conhecida (ex.: "~619 req/s" vs. 9.443 hits+misses
 > na linha do cache vinham de janelas diferentes) some com a leitura por delta.
 
+### 0. Medição atual (sandbox 8 vCPU, seed 10k, k6 v1.7)
+
+Run reproduzido com o harness corrigido (`node dist/server.js` em
+`NODE_ENV=production`, Redis dedicado, ramping 0→100 VUs por cenário):
+
+| Cenário | p95 | RNF01.3 (≤ 1 s) |
+|---|---|---|
+| `exp_feed` (`GET /events`, cacheado) | **70 ms** | ✅ |
+| `exp_distance` (`orderBy=distance`, KNN keyset) | **583 ms** | ✅ |
+| `exp_radius` (`radiusKm=5`) | **1,05 s** | ⚠️ limítrofe |
+
+- `server_error_rate` **0%** (0 de 247.592 reqs); `checks` 100%.
+- **RNF05.2 (CACHE_ONLY, mix 90% quente / 10% cauda):** hit-rate **89,6%**
+  (delta de janela) — número honesto e ~no limiar; tráfego urbano mais
+  concentrado que 90/10 ultrapassa 90%. (Substitui o "99,4%" anterior, que vinha
+  de poucas células e era trivial por construção.)
+
+**Achado:** `exp_radius` é o gargalo (1,05 s vs. 583 ms do distance vs. 70 ms do
+feed). O caminho `radiusKm` hidrata o **conjunto inteiro** do raio (até o cap de
+1000) com includes pesados, enquanto o `distance` hidrata só `limit (+1)` via
+keyset. Isso é exatamente o que motiva a **Fase 3 (enxugar o payload da lista)**,
+deixada condicional à medição no plano — agora a medição justifica fazê-la.
+Os valores são de um sandbox compartilhado (ver ressalva de hardware); o sinal
+**relativo** (radius ≫ distance ≫ feed) é o que vale.
+
 ### 1. Cache de grade (RNF05.2 + RNF01.4)
 
 Snap de coordenadas a ~110 m (`snapToGrid`) faz vizinhos compartilharem a
