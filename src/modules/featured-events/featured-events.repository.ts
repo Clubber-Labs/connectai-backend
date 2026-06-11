@@ -35,6 +35,35 @@ export async function findOverlappingActiveFeature(
   })
 }
 
+/** 1º dia do mês (UTC) — chave da quota mensal de promoções. */
+export function promotionPeriodFor(now: Date = new Date()): Date {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+}
+
+// Consome 1 da quota mensal de promoções, atomicamente, DENTRO da transação
+// de criação do destaque. Upsert + increment serializa pelo PK (userId,period);
+// exceder o limite lança 429 e o rollback da transação desfaz o incremento
+// (tentativa rejeitada não consome). Cancelar destaque NÃO devolve quota.
+export async function consumePromotionQuotaTx(
+  tx: TxClient,
+  userId: string,
+  limit: number,
+  now: Date = new Date(),
+) {
+  const period = promotionPeriodFor(now)
+  const usage = await tx.eventPromotionUsage.upsert({
+    where: { userId_period: { userId, period } },
+    create: { userId, period, count: 1 },
+    update: { count: { increment: 1 } },
+  })
+  if (usage.count > limit) {
+    throw {
+      statusCode: 429,
+      message: 'Limite mensal de promoções atingido',
+    }
+  }
+}
+
 export async function createFeaturedEventTx(
   tx: TxClient,
   data: { eventId: string; startsAt: Date; endsAt: Date; createdBy: string },

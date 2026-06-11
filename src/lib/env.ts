@@ -57,6 +57,8 @@ const baseSchema = z.object({
     .int()
     .positive()
     .default(300000),
+  // Quota mensal de promoções de evento por usuário premium (RF11.4+).
+  PROMOTION_MONTHLY_LIMIT: z.coerce.number().int().positive().default(3),
   // z.coerce.boolean() usa Boolean() do JS — "false"/"0" virariam true.
   // Aceita explicitamente as strings comuns e transforma manualmente.
   FEATURED_RECONCILE_ENABLED: z
@@ -273,6 +275,7 @@ export const env = {
   FACEBOOK_APP_SECRET: parsed.FACEBOOK_APP_SECRET,
   FEATURED_RECONCILE_INTERVAL_MS: parsed.FEATURED_RECONCILE_INTERVAL_MS,
   FEATURED_RECONCILE_ENABLED: parsed.FEATURED_RECONCILE_ENABLED,
+  PROMOTION_MONTHLY_LIMIT: parsed.PROMOTION_MONTHLY_LIMIT,
   LOG_LEVEL: parsed.LOG_LEVEL,
   SENTRY_DSN: parsed.SENTRY_DSN,
   OTEL_ENABLED: parsed.OTEL_ENABLED,

@@ -1,5 +1,7 @@
+import { env } from '../../lib/env'
 import { prisma } from '../../lib/prisma'
 import {
+  consumePromotionQuotaTx,
   createFeaturedEventTx,
   findEventForFeatured,
   findFeatureById,
@@ -60,14 +62,21 @@ export async function addFeaturedEvent(
   }
 
   try {
-    return await prisma.$transaction((tx) =>
-      createFeaturedEventTx(tx, {
+    return await prisma.$transaction(async (tx) => {
+      // Consome a quota mensal ANTES de criar — 429 aborta a transação e o
+      // rollback desfaz o incremento (tentativa rejeitada não consome).
+      await consumePromotionQuotaTx(
+        tx,
+        requesterId,
+        env.PROMOTION_MONTHLY_LIMIT,
+      )
+      return createFeaturedEventTx(tx, {
         eventId,
         startsAt: body.startsAt,
         endsAt: body.endsAt,
         createdBy: requesterId,
-      }),
-    )
+      })
+    })
   } catch (err) {
     // Safety-net: dois POSTs concorrentes podem passar pelo check otimista
     // acima e chegar aqui simultaneamente. A constraint de exclusão no DB
