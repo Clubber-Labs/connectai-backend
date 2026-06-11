@@ -102,6 +102,7 @@ export async function findSpotForFanout(id: string) {
       creatorId: true,
       conversationId: true,
       canceledAt: true,
+      endsAt: true,
     },
   })
 }

@@ -51,7 +51,11 @@ export async function runSpotPublishedFanout(
 ): Promise<{ notified: number }> {
   try {
     const spot = await findSpotForFanout(spotId)
-    if (!spot || spot.canceledAt) return { notified: 0 }
+    // Job atrasado (BullMQ é at-least-once): não notifica rolê cancelado nem já
+    // encerrado — seria "rolê perto de você" de algo que não existe mais.
+    if (!spot || spot.canceledAt || spot.endsAt <= new Date()) {
+      return { notified: 0 }
+    }
 
     const dedupeKey = notificationDedupeKey({ type: 'SPOT_NEARBY', spotId })
     const content = {
@@ -143,7 +147,8 @@ export async function runSpotJoinedFanout(
       actorId: joinerId,
     })
     const content = {
-      title: 'Entraram no seu rolê',
+      // Neutro: serve para o criador E para os membros (o rolê não é "deles").
+      title: 'Novo membro no rolê',
       body: `${actorName} entrou em "${spot.title}"`,
       data: { spotId, actorId: joinerId },
     }

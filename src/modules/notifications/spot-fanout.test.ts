@@ -138,6 +138,19 @@ describe('runSpotPublishedFanout (SPOT_NEARBY)', () => {
     const { notified } = await runSpotPublishedFanout(spot.id)
     expect(notified).toBe(0)
   })
+
+  it('spot já encerrado não dispara (job atrasado)', async () => {
+    const creator = await makeUser()
+    await makeNearbyUser()
+    const past = Date.now() - 2 * 3600_000
+    const spot = await makeNearbySpot(creator.id, {
+      startsAt: new Date(past),
+      endsAt: new Date(past + 3600_000),
+    })
+
+    const { notified } = await runSpotPublishedFanout(spot.id)
+    expect(notified).toBe(0)
+  })
 })
 
 describe('runSpotJoinedFanout (SPOT_JOIN)', () => {
