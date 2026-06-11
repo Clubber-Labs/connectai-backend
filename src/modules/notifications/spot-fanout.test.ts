@@ -33,8 +33,11 @@ afterAll(async () => {
   await testPrisma.$disconnect()
 })
 
-/** Usuário perto (geohash), com consentimento e preferência casando o spot. */
-async function makeNearbyUser() {
+/**
+ * Usuário perto (geohash) com consentimento. `category` = preferência (default
+ * casa o spot MUSIC); passe outra (ex.: SPORTS) para a audiência de descoberta.
+ */
+async function makeNearbyUser(category: EventCategory = CATEGORY) {
   const user = await makeUser()
   await testPrisma.user.update({
     where: { id: user.id },
@@ -48,7 +51,7 @@ async function makeNearbyUser() {
     data: { userId: user.id, locationPrecise: true, pushNotifications: true },
   })
   await testPrisma.userCategoryPreference.create({
-    data: { userId: user.id, category: CATEGORY },
+    data: { userId: user.id, category },
   })
   return user
 }
@@ -150,6 +153,66 @@ describe('runSpotPublishedFanout (SPOT_NEARBY)', () => {
 
     const { notified } = await runSpotPublishedFanout(spot.id)
     expect(notified).toBe(0)
+  })
+})
+
+describe('alcance premium (descoberta)', () => {
+  it('criador premium alcança quem está perto FORA da preferência', async () => {
+    const creator = await makeUser({ isPremium: true })
+    const matched = await makeNearbyUser('MUSIC')
+    const discovery = await makeNearbyUser('SPORTS') // perto, não prefere MUSIC
+    const spot = await makeNearbySpot(creator.id) // categoria MUSIC
+
+    const { notified } = await runSpotPublishedFanout(spot.id)
+
+    expect(notified).toBe(2)
+    for (const u of [matched, discovery]) {
+      expect(
+        await testPrisma.notification.findFirst({
+          where: { userId: u.id, type: 'SPOT_NEARBY' },
+        }),
+      ).not.toBeNull()
+    }
+  })
+
+  it('criador free NÃO alcança fora da preferência', async () => {
+    const creator = await makeUser() // free
+    const matched = await makeNearbyUser('MUSIC')
+    const discovery = await makeNearbyUser('SPORTS')
+    const spot = await makeNearbySpot(creator.id)
+
+    const { notified } = await runSpotPublishedFanout(spot.id)
+
+    expect(notified).toBe(1) // só quem prefere
+    expect(
+      await testPrisma.notification.findFirst({
+        where: { userId: matched.id, type: 'SPOT_NEARBY' },
+      }),
+    ).not.toBeNull()
+    expect(
+      await testPrisma.notification.findFirst({
+        where: { userId: discovery.id, type: 'SPOT_NEARBY' },
+      }),
+    ).toBeNull()
+  })
+
+  it('respeita o cap diário de descoberta por destinatário', async () => {
+    const creator = await makeUser({ isPremium: true })
+    const user = await makeNearbyUser('SPORTS') // descoberta (spot é MUSIC)
+    // Usuário já no teto de descoberta de hoje (cap = 5).
+    await testPrisma.$executeRaw`
+      INSERT INTO spot_discovery_usage ("userId", "day", "count", "updatedAt")
+      VALUES (${user.id}, CURRENT_DATE, 5, now())`
+    const spot = await makeNearbySpot(creator.id)
+
+    const { notified } = await runSpotPublishedFanout(spot.id)
+
+    expect(notified).toBe(0)
+    expect(
+      await testPrisma.notification.findFirst({
+        where: { userId: user.id, type: 'SPOT_NEARBY' },
+      }),
+    ).toBeNull()
   })
 })
 
