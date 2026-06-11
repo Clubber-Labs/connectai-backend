@@ -908,9 +908,30 @@ describe('POST /events', () => {
     })
 
     expect(res.statusCode).toBe(201)
+    expect(res.json().categories).toHaveLength(2)
     expect(res.json().categories).toEqual(
       expect.arrayContaining(['PARTY', 'MUSIC']),
     )
+  })
+
+  it('rejeita evento com mais de 5 categorias (400)', async () => {
+    const user = await makeUser()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/events',
+      headers: { authorization: `Bearer ${token(app, user.id)}` },
+      body: {
+        title: 'Evento com categorias demais',
+        date: new Date(Date.now() + 86400000).toISOString(),
+        latitude: -25.4,
+        longitude: -49.3,
+        categories: ['PARTY', 'MUSIC', 'SPORTS', 'TECH', 'ART', 'GAMING'],
+        isPublic: true,
+      },
+    })
+
+    expect(res.statusCode).toBe(400)
   })
 
   it('rejeita evento sem nenhuma categoria (400)', async () => {

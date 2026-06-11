@@ -40,6 +40,7 @@ export const categoryFilter = z
 export const eventCategoriesInput = z
   .array(eventCategorySchema)
   .min(1, 'Informe ao menos uma categoria')
+  .max(5, 'Máximo de 5 categorias')
   .transform((list) => Array.from(new Set(list)))
 
 export const createEventSchema = z
