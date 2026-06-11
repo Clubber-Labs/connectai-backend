@@ -1,0 +1,107 @@
+import { isBlockedEitherWay } from '../blocks/blocks.repository'
+import { reactivateParticipant } from '../chat/chat.repository'
+import { areMutualFollowers } from '../follows/follows.repository'
+import {
+  countActiveMembersByConversation,
+  countActiveSpotsByCreator,
+  createSpotWithConversation,
+  findSpotDetail,
+  findSpotIdsInBbox,
+  findSpotsByIds,
+  type SpotDetail,
+} from './spots.repository'
+import type { CreateSpotBody, ListSpotsQuery } from './spots.schema'
+
+const MAX_ACTIVE_SPOTS = 5
+
+function shapeSpot(spot: SpotDetail, memberCount: number) {
+  const { creatorId: _creatorId, ...rest } = spot
+  return { ...rest, memberCount }
+}
+
+/** Viewer pode ver o spot? público, ou criador, ou amigo mútuo (FRIENDS). */
+async function canView(
+  spot: Pick<SpotDetail, 'visibility' | 'creatorId'>,
+  viewerId: string | null,
+): Promise<boolean> {
+  if (spot.visibility === 'PUBLIC') return true
+  if (!viewerId) return false
+  if (spot.creatorId === viewerId) return true
+  return areMutualFollowers(viewerId, spot.creatorId)
+}
+
+export async function createSpot(creatorId: string, body: CreateSpotBody) {
+  const active = await countActiveSpotsByCreator(creatorId, new Date())
+  if (active >= MAX_ACTIVE_SPOTS) {
+    throw {
+      statusCode: 409,
+      message: `Limite de ${MAX_ACTIVE_SPOTS} spots ativos atingido`,
+    }
+  }
+  const spot = await createSpotWithConversation(creatorId, body)
+  // Recém-criado: só o criador no grupo.
+  return shapeSpot(spot, 1)
+}
+
+export async function getSpot(viewerId: string | null, id: string) {
+  const spot = await findSpotDetail(id)
+  if (!spot) throw { statusCode: 404, message: 'Spot não encontrado' }
+
+  // Bloqueio e privacidade ficam atrás de 404 (não vaza existência).
+  if (viewerId && (await isBlockedEitherWay(viewerId, spot.creatorId))) {
+    throw { statusCode: 404, message: 'Spot não encontrado' }
+  }
+  if (!(await canView(spot, viewerId))) {
+    throw { statusCode: 404, message: 'Spot não encontrado' }
+  }
+
+  const counts = await countActiveMembersByConversation([spot.conversationId])
+  return shapeSpot(spot, counts.get(spot.conversationId) ?? 0)
+}
+
+export async function listSpotsOnMap(
+  viewerId: string | null,
+  query: ListSpotsQuery,
+) {
+  const ids = await findSpotIdsInBbox(
+    viewerId,
+    {
+      bboxNorth: query.bboxNorth,
+      bboxSouth: query.bboxSouth,
+      bboxEast: query.bboxEast,
+      bboxWest: query.bboxWest,
+      category: query.category,
+      friendsOnly: query.friendsOnly,
+      limit: query.limit,
+    },
+    new Date(),
+  )
+  const spots = await findSpotsByIds(ids)
+  const counts = await countActiveMembersByConversation(
+    spots.map((s) => s.conversationId),
+  )
+  return spots.map((s) => shapeSpot(s, counts.get(s.conversationId) ?? 0))
+}
+
+/**
+ * Entrar no chat do spot = ser membro. Join aberto (sem convite), respeitando
+ * bloqueio e, em spot privado, follow mútuo. Idempotente (upsert do participante).
+ */
+export async function joinSpot(userId: string, id: string) {
+  const spot = await findSpotDetail(id)
+  if (!spot) throw { statusCode: 404, message: 'Spot não encontrado' }
+
+  // Bloqueio em qualquer direção: trata como inexistente.
+  if (await isBlockedEitherWay(userId, spot.creatorId)) {
+    throw { statusCode: 404, message: 'Spot não encontrado' }
+  }
+  if (spot.canceledAt || spot.endsAt <= new Date()) {
+    throw { statusCode: 409, message: 'Este rolê não está mais ativo' }
+  }
+  if (!(await canView(spot, userId))) {
+    throw { statusCode: 403, message: 'Spot restrito a amigos do criador' }
+  }
+
+  await reactivateParticipant(spot.conversationId, userId)
+  return { conversationId: spot.conversationId }
+}

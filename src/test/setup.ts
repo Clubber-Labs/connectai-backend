@@ -39,6 +39,8 @@ if (!redisUrl.endsWith('/15')) {
 afterEach(async () => {
   await testPrisma.$transaction([
     testPrisma.report.deleteMany(),
+    // Spot referencia conversation e creator com RESTRICT — apaga antes de ambos.
+    testPrisma.spot.deleteMany(),
     // Chat: conversation cascateia participants/messages/attachments;
     // conversation antes de user (createdById é RESTRICT).
     testPrisma.conversation.deleteMany(),
