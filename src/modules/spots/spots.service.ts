@@ -1,9 +1,11 @@
 import { isBlockedEitherWay } from '../blocks/blocks.repository'
-import { reactivateParticipant } from '../chat/chat.repository'
+import {
+  findActiveParticipant,
+  reactivateParticipant,
+} from '../chat/chat.repository'
 import { areMutualFollowers } from '../follows/follows.repository'
 import {
   countActiveMembersByConversation,
-  countActiveSpotsByCreator,
   createSpotWithConversation,
   findSpotDetail,
   findSpotIdsInBbox,
@@ -31,14 +33,17 @@ async function canView(
 }
 
 export async function createSpot(creatorId: string, body: CreateSpotBody) {
-  const active = await countActiveSpotsByCreator(creatorId, new Date())
-  if (active >= MAX_ACTIVE_SPOTS) {
-    throw {
-      statusCode: 409,
-      message: `Limite de ${MAX_ACTIVE_SPOTS} spots ativos atingido`,
-    }
+  // endsAt > startsAt já é garantido no schema; aqui barramos o spot "nascido
+  // morto" (janela inteira no passado) — `now` é estado externo, fora do Zod.
+  if (body.endsAt <= new Date()) {
+    throw { statusCode: 400, message: 'endsAt deve estar no futuro' }
   }
-  const spot = await createSpotWithConversation(creatorId, body)
+  // Teto verificado dentro da transação (advisory lock) — à prova de corrida.
+  const spot = await createSpotWithConversation(
+    creatorId,
+    body,
+    MAX_ACTIVE_SPOTS,
+  )
   // Recém-criado: só o criador no grupo.
   return shapeSpot(spot, 1)
 }
@@ -101,6 +106,11 @@ export async function joinSpot(userId: string, id: string) {
   if (!(await canView(spot, userId))) {
     throw { statusCode: 403, message: 'Spot restrito a amigos do criador' }
   }
+
+  // Já é membro ativo (inclui o criador, que é ADMIN): idempotente e sem
+  // rebaixar o role — reactivateParticipant força MEMBER no upsert.
+  const existing = await findActiveParticipant(spot.conversationId, userId)
+  if (existing) return { conversationId: spot.conversationId }
 
   await reactivateParticipant(spot.conversationId, userId)
   return { conversationId: spot.conversationId }

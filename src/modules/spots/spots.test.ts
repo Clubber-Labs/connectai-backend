@@ -87,6 +87,21 @@ describe('POST /spots', () => {
     expect(res.statusCode).toBe(401)
   })
 
+  it('rejeita spot com a janela inteira no passado (400)', async () => {
+    const user = await makeUser()
+    const past = Date.now() - 10 * 3600_000
+    const res = await app.inject({
+      method: 'POST',
+      url: '/spots',
+      headers: auth(user.id),
+      body: spotBody({
+        startsAt: new Date(past).toISOString(),
+        endsAt: new Date(past + 3600_000).toISOString(),
+      }),
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
   it('rejeita endsAt antes de startsAt (400)', async () => {
     const user = await makeUser()
     const now = Date.now()
@@ -228,6 +243,27 @@ describe('GET /spots (mapa)', () => {
     expect(ids).toContain(spot.id)
   })
 
+  it('mostra spot que ainda não começou (upcoming) e permite entrar', async () => {
+    const creator = await makeUser()
+    const joiner = await makeUser()
+    const now = Date.now()
+    const upcoming = await makeSpot(creator.id, {
+      startsAt: new Date(now + 2 * 3600_000), // começa em 2h
+      endsAt: new Date(now + 5 * 3600_000),
+    })
+
+    const list = await app.inject({ method: 'GET', url: BBOX })
+    const ids = list.json().map((s: { id: string }) => s.id)
+    expect(ids).toContain(upcoming.id)
+
+    const join = await app.inject({
+      method: 'POST',
+      url: `/spots/${upcoming.id}/members`,
+      headers: auth(joiner.id),
+    })
+    expect(join.statusCode).toBe(200)
+  })
+
   it('exclui encerrado, cancelado e fora da bbox', async () => {
     const creator = await makeUser()
     const past = Date.now() - 10 * 3600_000
@@ -323,6 +359,23 @@ describe('POST /spots/:id/members (entrar)', () => {
       },
     })
     expect(participant).not.toBeNull()
+  })
+
+  it('criador entrar no próprio spot não rebaixa o role (ADMIN preservado)', async () => {
+    const creator = await makeUser()
+    const spot = await makeSpot(creator.id)
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/spots/${spot.id}/members`,
+      headers: auth(creator.id),
+    })
+    expect(res.statusCode).toBe(200)
+
+    const participant = await testPrisma.conversationParticipant.findFirst({
+      where: { conversationId: spot.conversationId, userId: creator.id },
+    })
+    expect(participant?.role).toBe('ADMIN')
   })
 
   it('é idempotente (entrar duas vezes)', async () => {

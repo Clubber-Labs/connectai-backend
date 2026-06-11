@@ -32,22 +32,31 @@ export type SpotDetail = Prisma.SpotGetPayload<{
   select: typeof spotDetailSelect
 }>
 
-/** Spots ativos (não cancelados e ainda não encerrados) do criador — para o teto. */
-export async function countActiveSpotsByCreator(creatorId: string, now: Date) {
-  return prisma.spot.count({
-    where: { creatorId, canceledAt: null, endsAt: { gt: now } },
-  })
-}
-
 /**
  * Publica o spot: cria a conversa GROUP aberta (criador como ADMIN) e o spot
  * ligado a ela, numa transação — um nasce com o outro ou nenhum.
+ *
+ * O teto de spots ativos é verificado DENTRO da transação, atrás de um advisory
+ * lock por criador. Sob READ COMMITTED um COUNT em transação não basta (dois
+ * requests concorrentes leem o mesmo valor antes de qualquer INSERT); o lock
+ * serializa as criações do MESMO usuário, então o teto nunca é furado por corrida.
  */
 export async function createSpotWithConversation(
   creatorId: string,
   data: CreateSpotBody,
+  maxActive: number,
 ): Promise<SpotDetail> {
   return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`spot_cap:${creatorId}`}))`
+    const active = await tx.spot.count({
+      where: { creatorId, canceledAt: null, endsAt: { gt: new Date() } },
+    })
+    if (active >= maxActive) {
+      throw {
+        statusCode: 409,
+        message: `Limite de ${maxActive} spots ativos atingido`,
+      }
+    }
     const conversation = await tx.conversation.create({
       data: {
         type: 'GROUP',
@@ -107,6 +116,10 @@ export type SpotMapFilters = {
  * ativa, bbox (índice GiST sobre location), interseção de categorias, bloqueio
  * mútuo e visibilidade (público; ou criador; ou FRIENDS via follow mútuo).
  * Viewer anônimo (null) só enxerga PUBLIC e nunca com friendsOnly.
+ *
+ * "Ativo" = não cancelado E ainda não encerrado (`endsAt > now`) — inclui os
+ * que ainda não começaram (upcoming): o objetivo é entrar no chat e COMBINAR
+ * antes do rolê. startsAt é só o horário exibido, não um gate de visibilidade.
  */
 export async function findSpotIdsInBbox(
   viewerId: string | null,
@@ -159,7 +172,6 @@ export async function findSpotIdsInBbox(
     SELECT s.id
     FROM spots s
     WHERE s."canceledAt" IS NULL
-      AND s."startsAt" <= ${now}
       AND s."endsAt" > ${now}
       AND s.location && ${envelope}
       ${categoryFilter}
