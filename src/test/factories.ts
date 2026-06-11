@@ -302,3 +302,56 @@ export async function makeBlock(blockerId: string, blockedId: string) {
     data: { blockerId, blockedId },
   })
 }
+
+/**
+ * Cria um spot já publicado: a conversa GROUP aberta (criador como ADMIN) + o
+ * spot ligado a ela. Janela ativa por padrão (começou há 1h, termina em 3h).
+ */
+export async function makeSpot(
+  creatorId: string,
+  overrides: {
+    title?: string
+    description?: string | null
+    categories?: EventCategory[]
+    visibility?: 'PUBLIC' | 'FRIENDS'
+    placeId?: string
+    latitude?: number
+    longitude?: number
+    startsAt?: Date
+    endsAt?: Date
+    canceledAt?: Date | null
+    memberIds?: string[]
+  } = {},
+) {
+  const id = uid()
+  const conversation = await testPrisma.conversation.create({
+    data: {
+      type: 'GROUP',
+      title: overrides.title ?? `Rolê ${id}`,
+      createdById: creatorId,
+      participants: {
+        create: [
+          { userId: creatorId, role: 'ADMIN' },
+          ...(overrides.memberIds ?? []).map((userId) => ({ userId })),
+        ],
+      },
+    },
+  })
+  const now = Date.now()
+  return testPrisma.spot.create({
+    data: {
+      title: overrides.title ?? `Rolê ${id}`,
+      description: overrides.description ?? null,
+      categories: overrides.categories ?? ['PARTY'],
+      visibility: overrides.visibility ?? 'PUBLIC',
+      placeId: overrides.placeId ?? `place_${id}`,
+      latitude: overrides.latitude ?? -25.4,
+      longitude: overrides.longitude ?? -49.3,
+      startsAt: overrides.startsAt ?? new Date(now - 3600_000),
+      endsAt: overrides.endsAt ?? new Date(now + 3 * 3600_000),
+      canceledAt: overrides.canceledAt ?? null,
+      creatorId,
+      conversationId: conversation.id,
+    },
+  })
+}
