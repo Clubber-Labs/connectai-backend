@@ -15,7 +15,7 @@ const CELL_HALF_DIAGONAL_M = 700
 export type ProximityTarget = {
   longitude: number
   latitude: number
-  category: EventCategory
+  categories: EventCategory[]
   authorId: string
 }
 
@@ -39,8 +39,9 @@ export type ProximityScan = {
  * (`ST_Distance <= notifyRadiusKm*1000 + meia-diagonal`) roda só sobre os
  * candidatos — padrão "filtro na camada certa" do CLAUDE.md. Demais predicados:
  * freshness (TTL), consentimento (push + locationPrecise, não revogado),
- * categoria preferida explícita, conta ativa, não-autor e sem bloqueio entre as
- * partes (espelha a exclusão de bloqueio do chat.repository).
+ * interseção de categorias (o usuário prefere AO MENOS UMA das categorias do
+ * evento), conta ativa, não-autor e sem bloqueio entre as partes (espelha a
+ * exclusão de bloqueio do chat.repository).
  */
 export async function findUsersToNotifyNearEvent(
   target: ProximityTarget,
@@ -66,7 +67,8 @@ export async function findUsersToNotifyNearEvent(
       AND c."locationPrecise" = true
       AND EXISTS (
         SELECT 1 FROM user_category_preferences ucp
-        WHERE ucp."userId" = u.id AND ucp.category::text = ${target.category}
+        WHERE ucp."userId" = u.id
+          AND ucp.category::text = ANY(${target.categories})
       )
       AND NOT EXISTS (
         SELECT 1 FROM blocks b

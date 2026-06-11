@@ -76,7 +76,9 @@ export async function makeEvent(
   authorId: string,
   overrides: {
     isPublic?: boolean
+    /** Atalho legado: uma categoria única (vira `[category]`). */
     category?: EventCategory
+    categories?: EventCategory[]
     date?: Date
     endDate?: Date | null
     canceledAt?: Date | null
@@ -98,7 +100,9 @@ export async function makeEvent(
       endDate: overrides.endDate ?? null,
       latitude: overrides.latitude ?? -25.4,
       longitude: overrides.longitude ?? -49.3,
-      category: overrides.category ?? 'PARTY',
+      categories:
+        overrides.categories ??
+        (overrides.category ? [overrides.category] : ['PARTY']),
       isPublic: overrides.isPublic ?? true,
       isFeatured: overrides.isFeatured ?? false,
       canceledAt: overrides.canceledAt ?? null,

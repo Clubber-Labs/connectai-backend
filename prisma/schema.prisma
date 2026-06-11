@@ -351,7 +351,7 @@ model Event {
   latitude    Float
   longitude   Float
   address     String?
-  category    EventCategory
+  categories  EventCategory[]
   isPublic    Boolean  @default(true)
   isFeatured  Boolean  @default(false)
   maxCapacity Int?
@@ -374,6 +374,7 @@ model Event {
   @@index([date])
   @@index([isPublic, date])
   @@index([isFeatured, date, id])
+  @@index([categories], type: Gin)
   @@map("events")
 }
 
