@@ -28,6 +28,7 @@ export async function postJoinSpot(
   reply: FastifyReply,
 ) {
   const { id } = request.params as SpotParam
-  const result = await joinSpot(request.user.sub, id)
-  return reply.send(result)
+  const { conversationId, created } = await joinSpot(request.user.sub, id)
+  // 201 no primeiro ingresso (cria a participação); 200 nos repetidos.
+  return reply.status(created ? 201 : 200).send({ conversationId })
 }

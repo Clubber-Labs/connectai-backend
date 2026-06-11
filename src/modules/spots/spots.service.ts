@@ -68,6 +68,9 @@ export async function listSpotsOnMap(
   viewerId: string | null,
   query: ListSpotsQuery,
 ) {
+  if (query.friendsOnly && !viewerId) {
+    throw { statusCode: 400, message: 'friendsOnly exige autenticação' }
+  }
   const ids = await findSpotIdsInBbox(
     viewerId,
     {
@@ -110,8 +113,8 @@ export async function joinSpot(userId: string, id: string) {
   // Já é membro ativo (inclui o criador, que é ADMIN): idempotente e sem
   // rebaixar o role — reactivateParticipant força MEMBER no upsert.
   const existing = await findActiveParticipant(spot.conversationId, userId)
-  if (existing) return { conversationId: spot.conversationId }
+  if (existing) return { conversationId: spot.conversationId, created: false }
 
   await reactivateParticipant(spot.conversationId, userId)
-  return { conversationId: spot.conversationId }
+  return { conversationId: spot.conversationId, created: true }
 }

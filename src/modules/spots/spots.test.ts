@@ -261,7 +261,7 @@ describe('GET /spots (mapa)', () => {
       url: `/spots/${upcoming.id}/members`,
       headers: auth(joiner.id),
     })
-    expect(join.statusCode).toBe(200)
+    expect(join.statusCode).toBe(201)
   })
 
   it('exclui encerrado, cancelado e fora da bbox', async () => {
@@ -322,6 +322,14 @@ describe('GET /spots (mapa)', () => {
     expect(ids).not.toContain(sports.id)
   })
 
+  it('friendsOnly sem autenticação retorna 400', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `${BBOX}&friendsOnly=true`,
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
   it('bloqueio esconde o spot do mapa', async () => {
     const creator = await makeUser()
     const blocked = await makeUser()
@@ -338,7 +346,7 @@ describe('GET /spots (mapa)', () => {
 })
 
 describe('POST /spots/:id/members (entrar)', () => {
-  it('entra no chat de spot público e vira participante (200)', async () => {
+  it('entra no chat de spot público e vira participante (201)', async () => {
     const creator = await makeUser()
     const joiner = await makeUser()
     const spot = await makeSpot(creator.id)
@@ -348,7 +356,7 @@ describe('POST /spots/:id/members (entrar)', () => {
       url: `/spots/${spot.id}/members`,
       headers: auth(joiner.id),
     })
-    expect(res.statusCode).toBe(200)
+    expect(res.statusCode).toBe(201)
     expect(res.json().conversationId).toBe(spot.conversationId)
 
     const participant = await testPrisma.conversationParticipant.findFirst({
@@ -383,17 +391,18 @@ describe('POST /spots/:id/members (entrar)', () => {
     const joiner = await makeUser()
     const spot = await makeSpot(creator.id)
 
-    await app.inject({
+    const first = await app.inject({
       method: 'POST',
       url: `/spots/${spot.id}/members`,
       headers: auth(joiner.id),
     })
+    expect(first.statusCode).toBe(201)
     const again = await app.inject({
       method: 'POST',
       url: `/spots/${spot.id}/members`,
       headers: auth(joiner.id),
     })
-    expect(again.statusCode).toBe(200)
+    expect(again.statusCode).toBe(200) // repetido: já é membro
 
     const count = await testPrisma.conversationParticipant.count({
       where: { conversationId: spot.conversationId, userId: joiner.id },
@@ -423,7 +432,7 @@ describe('POST /spots/:id/members (entrar)', () => {
       url: `/spots/${spot.id}/members`,
       headers: auth(friend.id),
     })
-    expect(ok.statusCode).toBe(200)
+    expect(ok.statusCode).toBe(201)
 
     const forbidden = await app.inject({
       method: 'POST',
