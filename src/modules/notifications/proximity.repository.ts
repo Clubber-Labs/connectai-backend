@@ -95,11 +95,22 @@ export type SpotProximityTarget = ProximityTarget & {
 export async function findUsersToNotifyNearSpot(
   target: SpotProximityTarget,
   scan: ProximityScan,
+  // discovery = alcance premium: inverte a preferência (quem NÃO prefere a
+  // categoria). O cap de frequência é aplicado pelo caller.
+  opts: { discovery?: boolean } = {},
 ): Promise<string[]> {
   const point = Prisma.sql`ST_SetSRID(ST_MakePoint(${target.longitude}, ${target.latitude}), 4326)::geography`
   const cursor = scan.cursorId
     ? Prisma.sql`AND u.id > ${scan.cursorId}`
     : Prisma.empty
+  const preferenceExists = Prisma.sql`EXISTS (
+        SELECT 1 FROM user_category_preferences ucp
+        WHERE ucp."userId" = u.id
+          AND ucp.category::text = ANY(${target.categories})
+      )`
+  const preference = opts.discovery
+    ? Prisma.sql`AND NOT ${preferenceExists}`
+    : Prisma.sql`AND ${preferenceExists}`
   const visibility =
     target.visibility === 'FRIENDS'
       ? Prisma.sql`AND EXISTS (
@@ -127,11 +138,7 @@ export async function findUsersToNotifyNearSpot(
       AND c."revokedAt" IS NULL
       AND c."pushNotifications" = true
       AND c."locationPrecise" = true
-      AND EXISTS (
-        SELECT 1 FROM user_category_preferences ucp
-        WHERE ucp."userId" = u.id
-          AND ucp.category::text = ANY(${target.categories})
-      )
+      ${preference}
       AND NOT EXISTS (
         SELECT 1 FROM blocks b
         WHERE (b."blockerId" = u.id AND b."blockedId" = ${target.authorId})

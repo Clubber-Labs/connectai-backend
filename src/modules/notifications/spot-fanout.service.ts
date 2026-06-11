@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client'
 import { env } from '../../lib/env'
 import { logger } from '../../lib/logger'
 import { realtime } from '../../lib/realtime'
@@ -16,6 +17,7 @@ import {
   shapeNotification,
 } from './notification-shape'
 import { findUsersToNotifyNearSpot } from './proximity.repository'
+import { consumeDiscoveryBudgetBatch } from './spot-fanout.repository'
 
 type CreatedNotification = Awaited<
   ReturnType<typeof findNotificationsByDedupeKey>
@@ -40,11 +42,83 @@ async function deliver(notifications: CreatedNotification[]): Promise<void> {
   )
 }
 
+const DISCOVERY_DAILY_CAP = 5
+
+type SpotForFanout = NonNullable<Awaited<ReturnType<typeof findSpotForFanout>>>
+
+/**
+ * Loop paginado de SPOT_NEARBY. `discovery=false` = audiência que PREFERE a
+ * categoria; `discovery=true` = alcance premium (quem NÃO prefere), limitado
+ * pelo cap diário por destinatário. Idempotente por dedupeKey, best-effort.
+ */
+async function fanOutNearby(
+  spot: SpotForFanout,
+  dedupeKey: string,
+  content: { title: string; body: string; data: Prisma.InputJsonObject },
+  discovery: boolean,
+): Promise<number> {
+  const target = {
+    longitude: spot.longitude,
+    latitude: spot.latitude,
+    categories: spot.categories,
+    authorId: spot.creatorId,
+    visibility: spot.visibility,
+  }
+  const batchSize = env.NOTIFY_FANOUT_BATCH_SIZE
+  let cursorId: string | undefined
+  let notified = 0
+
+  while (true) {
+    const userIds = await findUsersToNotifyNearSpot(
+      target,
+      {
+        maxRadiusKm: env.NOTIFY_MAX_RADIUS_KM,
+        ttlDays: env.NOTIFY_LOCATION_TTL_DAYS,
+        limit: batchSize,
+        cursorId,
+      },
+      { discovery },
+    )
+    if (userIds.length === 0) break
+    cursorId = userIds[userIds.length - 1]
+
+    const existing = await findExistingUserIdsByDedupeKey(userIds, dedupeKey)
+    let recipients = userIds.filter((id) => !existing.has(id))
+    // Descoberta: só quem ainda está abaixo do cap diário (consumo atômico).
+    if (discovery) {
+      recipients = await consumeDiscoveryBudgetBatch(
+        recipients,
+        DISCOVERY_DAILY_CAP,
+      )
+    }
+
+    if (recipients.length > 0) {
+      await createManyNotifications(
+        recipients.map((userId) => ({
+          userId,
+          type: 'SPOT_NEARBY' as const,
+          spotId: spot.id,
+          title: content.title,
+          body: content.body,
+          data: content.data,
+          dedupeKey,
+        })),
+      )
+      const created = await findNotificationsByDedupeKey(recipients, dedupeKey)
+      await deliver(created)
+      notified += created.length
+    }
+
+    if (userIds.length < batchSize) break
+  }
+  return notified
+}
+
 /**
  * Fan-out de proximidade de um spot recém-publicado: SPOT_NEARBY para quem está
- * perto E prefere alguma das categorias do spot. Espelha runEventCreatedFanout
- * (paginado, idempotente por dedupeKey, best-effort). Spot FRIENDS só alcança
- * follow mútuo do criador (filtro na query). Cancelado não dispara.
+ * perto E prefere a categoria. Se o criador é PREMIUM, alcança também quem está
+ * perto mas NÃO prefere (descoberta), limitado pelo cap diário. Spot FRIENDS só
+ * alcança follow mútuo do criador. Cancelado/encerrado não dispara.
  */
 export async function runSpotPublishedFanout(
   spotId: string,
@@ -58,59 +132,25 @@ export async function runSpotPublishedFanout(
     }
 
     const dedupeKey = notificationDedupeKey({ type: 'SPOT_NEARBY', spotId })
-    const content = {
-      title: 'Tem rolê perto de você',
-      body: spot.title,
-      data: { spotId },
-    }
-    const batchSize = env.NOTIFY_FANOUT_BATCH_SIZE
 
-    let cursorId: string | undefined
-    let notified = 0
+    let notified = await fanOutNearby(
+      spot,
+      dedupeKey,
+      { title: 'Tem rolê perto de você', body: spot.title, data: { spotId } },
+      false,
+    )
 
-    while (true) {
-      const userIds = await findUsersToNotifyNearSpot(
+    if (spot.creator.isPremium) {
+      notified += await fanOutNearby(
+        spot,
+        dedupeKey,
         {
-          longitude: spot.longitude,
-          latitude: spot.latitude,
-          categories: spot.categories,
-          authorId: spot.creatorId,
-          visibility: spot.visibility,
+          title: 'Tem rolê perto de você',
+          body: spot.title,
+          data: { spotId, discovery: true },
         },
-        {
-          maxRadiusKm: env.NOTIFY_MAX_RADIUS_KM,
-          ttlDays: env.NOTIFY_LOCATION_TTL_DAYS,
-          limit: batchSize,
-          cursorId,
-        },
+        true,
       )
-      if (userIds.length === 0) break
-      cursorId = userIds[userIds.length - 1]
-
-      const existing = await findExistingUserIdsByDedupeKey(userIds, dedupeKey)
-      const newUserIds = userIds.filter((id) => !existing.has(id))
-
-      if (newUserIds.length > 0) {
-        await createManyNotifications(
-          newUserIds.map((userId) => ({
-            userId,
-            type: 'SPOT_NEARBY' as const,
-            spotId,
-            title: content.title,
-            body: content.body,
-            data: content.data,
-            dedupeKey,
-          })),
-        )
-        const created = await findNotificationsByDedupeKey(
-          newUserIds,
-          dedupeKey,
-        )
-        await deliver(created)
-        notified += created.length
-      }
-
-      if (userIds.length < batchSize) break
     }
 
     return { notified }
