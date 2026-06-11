@@ -124,6 +124,77 @@ function normalizeShared(
   }
 }
 
+type EventImagePayload = Prisma.EventImageGetPayload<{
+  select: typeof eventImageSelect
+}>
+
+type AnchorImageRow = EventImagePayload & { seriesId: string }
+
+// Imagens da ocorrência ÂNCORA de cada série = a de menor (date, id) que TEM
+// imagem (sem filtro de lifecycle — a imagem é da série mesmo que a 1ª já seja
+// passada). Uma query para todas as séries (sem N+1). Estilo de ROW_NUMBER já
+// usado em findTopAttendancesByEvent.
+async function findSeriesAnchorImages(
+  seriesIds: string[],
+): Promise<Map<string, EventImagePayload[]>> {
+  const map = new Map<string, EventImagePayload[]>()
+  if (seriesIds.length === 0) return map
+
+  const rows = await prisma.$queryRaw<AnchorImageRow[]>(Prisma.sql`
+    SELECT anchor."seriesId" AS "seriesId",
+           img.id, img.url, img.format, img.size, img."order"
+    FROM (
+      SELECT e.id, e."seriesId",
+             ROW_NUMBER() OVER (
+               PARTITION BY e."seriesId" ORDER BY e.date ASC, e.id ASC
+             ) AS rn
+      FROM events e
+      WHERE e."seriesId" IN (${Prisma.join(seriesIds)})
+        AND EXISTS (SELECT 1 FROM event_images ei WHERE ei."eventId" = e.id)
+    ) anchor
+    JOIN event_images img ON img."eventId" = anchor.id
+    WHERE anchor.rn = 1
+    ORDER BY anchor."seriesId", img."order" ASC, img."createdAt" ASC
+  `)
+
+  for (const r of rows) {
+    const list = map.get(r.seriesId) ?? []
+    list.push({
+      id: r.id,
+      url: r.url,
+      format: r.format,
+      size: r.size,
+      order: r.order,
+    })
+    map.set(r.seriesId, list)
+  }
+  return map
+}
+
+// normalizeShared em lote, com fallback de imagem por série: ocorrências de uma
+// série SEM imagem própria herdam, no payload, as imagens da âncora da série.
+// Herança de leitura (não cópia física); se a âncora perde as imagens, as
+// ocorrências perdem o fallback. Batched para evitar N+1.
+async function normalizeSharedList(
+  events: PrismaSharedEvent[],
+  now: Date = new Date(),
+): Promise<SharedEvent[]> {
+  const needFallback = events.filter(
+    (e) => e.seriesId !== null && e.images.length === 0,
+  )
+  if (needFallback.length > 0) {
+    const seriesIds = [
+      ...new Set(needFallback.map((e) => e.seriesId as string)),
+    ]
+    const anchorImages = await findSeriesAnchorImages(seriesIds)
+    for (const e of needFallback) {
+      const imgs = anchorImages.get(e.seriesId as string)
+      if (imgs) e.images = imgs
+    }
+  }
+  return events.map((e) => normalizeShared(e, now))
+}
+
 export async function findPublicEvents(
   filters: Pick<
     ListEventsQuery,
@@ -210,7 +281,7 @@ export async function findPublicEvents(
           .slice(0, limit)
       : events
 
-  return ordered.map((e) => normalizeShared(e, now))
+  return normalizeSharedList(ordered, now)
 }
 
 export async function findEventsByAuthor(
@@ -236,7 +307,7 @@ export async function findEventsByAuthor(
     include: buildSharedIncludes(),
   })) as unknown as PrismaSharedEvent[]
 
-  return events.map((e) => normalizeShared(e, now))
+  return normalizeSharedList(events, now)
 }
 
 export async function findEventAccess(id: string) {
@@ -284,7 +355,7 @@ export async function findEventById(
   })) as unknown as PrismaSharedEvent | null
 
   if (!event) return null
-  return normalizeShared(event, now)
+  return (await normalizeSharedList([event], now))[0]
 }
 
 export type ViewerEventState = {
@@ -616,7 +687,7 @@ export async function findEventsInViewport(
 
   const truncated = rows.length > query.limit
   const page = truncated ? rows.slice(0, query.limit) : rows
-  return { events: page.map((e) => normalizeShared(e, now)), truncated }
+  return { events: await normalizeSharedList(page, now), truncated }
 }
 
 /**
@@ -650,7 +721,7 @@ export async function searchEvents(
     include: buildSharedIncludes(),
   })) as unknown as PrismaSharedEvent[]
 
-  return events.map((e) => normalizeShared(e, now))
+  return normalizeSharedList(events, now)
 }
 
 export async function createEvent(

@@ -151,6 +151,29 @@ export async function makeEventSeries(
   })
 }
 
+export async function makeEventImage(
+  eventId: string,
+  overrides: {
+    url?: string
+    key?: string
+    format?: string
+    size?: number
+    order?: number
+  } = {},
+) {
+  const id = uid()
+  return testPrisma.eventImage.create({
+    data: {
+      eventId,
+      url: overrides.url ?? `https://cdn.test/${id}.webp`,
+      key: overrides.key ?? `events/${eventId}/${id}`,
+      format: overrides.format ?? 'webp',
+      size: overrides.size ?? 1024,
+      order: overrides.order ?? 0,
+    },
+  })
+}
+
 export async function makeFollow(
   followerId: string,
   followingId: string,
