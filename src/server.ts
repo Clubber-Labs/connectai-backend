@@ -46,6 +46,7 @@ import {
 import { startNotificationRetentionReconciler } from './modules/notifications/notification-retention.reconciler'
 import { notificationsGateway } from './modules/notifications/notifications.gateway'
 import { notificationsRoutes } from './modules/notifications/notifications.routes'
+import { startPromotedDigestReconciler } from './modules/notifications/promoted-digest.reconciler'
 import { startPushReceiptsReconciler } from './modules/notifications/push-receipts.reconciler'
 import { startSpotLifecycleReconciler } from './modules/notifications/spot-lifecycle.reconciler'
 import { startPasswordResetCleanupReconciler } from './modules/password-reset/password-reset.reconciler'
@@ -190,6 +191,9 @@ app.listen({ port: env.PORT, host: '0.0.0.0' }).then(() => {
   app.log.info(`Server is running on http://localhost:${env.PORT}`)
   if (env.NODE_ENV !== 'test' && env.FEATURED_RECONCILE_ENABLED) {
     startFeaturedEventsReconciler(env.FEATURED_RECONCILE_INTERVAL_MS)
+  }
+  if (env.NODE_ENV !== 'test' && env.PROMOTION_DIGEST_ENABLED) {
+    startPromotedDigestReconciler(env.PROMOTION_DIGEST_INTERVAL_MS)
   }
   if (env.NODE_ENV !== 'test' && env.ACCOUNT_DELETION_ENABLED) {
     startAccountDeletionReconciler(env.ACCOUNT_DELETION_INTERVAL_MS)
