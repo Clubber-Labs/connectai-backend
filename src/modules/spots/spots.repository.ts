@@ -88,6 +88,44 @@ export async function findSpotDetail(id: string): Promise<SpotDetail | null> {
   return prisma.spot.findUnique({ where: { id }, select: spotDetailSelect })
 }
 
+/** Campos mínimos para autorizar mutação (dono) e checar estado. */
+export async function findSpotForMutation(id: string) {
+  return prisma.spot.findUnique({
+    where: { id },
+    select: { id: true, creatorId: true, canceledAt: true },
+  })
+}
+
+export async function updateSpotById(
+  id: string,
+  data: { title?: string; description?: string | null },
+): Promise<SpotDetail> {
+  return prisma.$transaction(async (tx) => {
+    const spot = await tx.spot.update({
+      where: { id },
+      data,
+      select: spotDetailSelect,
+    })
+    // O título do spot e o do grupo nascem iguais (createSpotWithConversation);
+    // renomear o spot renomeia o chat junto, senão o cabeçalho fica defasado.
+    if (data.title !== undefined) {
+      await tx.conversation.update({
+        where: { id: spot.conversationId },
+        data: { title: data.title },
+      })
+    }
+    return spot
+  })
+}
+
+export async function cancelSpotById(id: string, now: Date) {
+  return prisma.spot.update({
+    where: { id },
+    data: { canceledAt: now },
+    select: { id: true },
+  })
+}
+
 /** Membros ativos por conversa (batch) — `memberCount` dos balões = participar do chat. */
 export async function countActiveMembersByConversation(
   conversationIds: string[],

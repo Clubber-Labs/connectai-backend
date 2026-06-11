@@ -1,6 +1,18 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import type { CreateSpotBody, ListSpotsQuery, SpotParam } from './spots.schema'
-import { createSpot, getSpot, joinSpot, listSpotsOnMap } from './spots.service'
+import type {
+  CreateSpotBody,
+  ListSpotsQuery,
+  SpotParam,
+  UpdateSpotBody,
+} from './spots.schema'
+import {
+  cancelSpot,
+  createSpot,
+  editSpot,
+  getSpot,
+  joinSpot,
+  listSpotsOnMap,
+} from './spots.service'
 
 export async function postSpot(request: FastifyRequest, reply: FastifyReply) {
   const body = request.body as CreateSpotBody
@@ -31,4 +43,17 @@ export async function postJoinSpot(
   const { conversationId, created } = await joinSpot(request.user.sub, id)
   // 201 no primeiro ingresso (cria a participação); 200 nos repetidos.
   return reply.status(created ? 201 : 200).send({ conversationId })
+}
+
+export async function patchSpot(request: FastifyRequest, reply: FastifyReply) {
+  const { id } = request.params as SpotParam
+  const body = request.body as UpdateSpotBody
+  const spot = await editSpot(id, request.user.sub, body)
+  return reply.send(spot)
+}
+
+export async function deleteSpot(request: FastifyRequest, reply: FastifyReply) {
+  const { id } = request.params as SpotParam
+  await cancelSpot(id, request.user.sub)
+  return reply.status(204).send()
 }

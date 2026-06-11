@@ -232,6 +232,179 @@ describe('GET /spots/:id', () => {
   })
 })
 
+describe('PATCH /spots/:id (editar)', () => {
+  it('criador edita título e descrição (200)', async () => {
+    const creator = await makeUser()
+    const spot = await makeSpot(creator.id)
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/spots/${spot.id}`,
+      headers: auth(creator.id),
+      body: { title: 'Novo título', description: 'Nova descrição' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({
+      title: 'Novo título',
+      description: 'Nova descrição',
+    })
+  })
+
+  it('renomear o spot renomeia o chat junto', async () => {
+    const creator = await makeUser()
+    const spot = await makeSpot(creator.id)
+
+    await app.inject({
+      method: 'PATCH',
+      url: `/spots/${spot.id}`,
+      headers: auth(creator.id),
+      body: { title: 'Título sincronizado' },
+    })
+
+    const conversation = await testPrisma.conversation.findUnique({
+      where: { id: spot.conversationId },
+    })
+    expect(conversation?.title).toBe('Título sincronizado')
+  })
+
+  it('não edita spot cancelado (409)', async () => {
+    const creator = await makeUser()
+    const spot = await makeSpot(creator.id, { canceledAt: new Date() })
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/spots/${spot.id}`,
+      headers: auth(creator.id),
+      body: { title: 'Tentativa' },
+    })
+    expect(res.statusCode).toBe(409)
+  })
+
+  it('retorna 401 sem autenticação', async () => {
+    const creator = await makeUser()
+    const spot = await makeSpot(creator.id)
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/spots/${spot.id}`,
+      body: { title: 'X title' },
+    })
+    expect(res.statusCode).toBe(401)
+  })
+
+  it('não-criador não edita (403)', async () => {
+    const creator = await makeUser()
+    const other = await makeUser()
+    const spot = await makeSpot(creator.id)
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/spots/${spot.id}`,
+      headers: auth(other.id),
+      body: { title: 'Hackeado' },
+    })
+    expect(res.statusCode).toBe(403)
+  })
+
+  it('rejeita body vazio (400)', async () => {
+    const creator = await makeUser()
+    const spot = await makeSpot(creator.id)
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/spots/${spot.id}`,
+      headers: auth(creator.id),
+      body: {},
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('404 para spot inexistente', async () => {
+    const creator = await makeUser()
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/spots/00000000-0000-0000-0000-000000000000',
+      headers: auth(creator.id),
+      body: { title: 'X title' },
+    })
+    expect(res.statusCode).toBe(404)
+  })
+})
+
+describe('DELETE /spots/:id (cancelar)', () => {
+  it('criador cancela e o spot sai do mapa (204)', async () => {
+    const creator = await makeUser()
+    const spot = await makeSpot(creator.id)
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/spots/${spot.id}`,
+      headers: auth(creator.id),
+    })
+    expect(res.statusCode).toBe(204)
+
+    const list = await app.inject({ method: 'GET', url: BBOX })
+    expect(list.json().map((s: { id: string }) => s.id)).not.toContain(spot.id)
+  })
+
+  it('cancelado bloqueia entrada (409)', async () => {
+    const creator = await makeUser()
+    const joiner = await makeUser()
+    const spot = await makeSpot(creator.id)
+    await app.inject({
+      method: 'DELETE',
+      url: `/spots/${spot.id}`,
+      headers: auth(creator.id),
+    })
+
+    const join = await app.inject({
+      method: 'POST',
+      url: `/spots/${spot.id}/members`,
+      headers: auth(joiner.id),
+    })
+    expect(join.statusCode).toBe(409)
+  })
+
+  it('retorna 401 sem autenticação', async () => {
+    const creator = await makeUser()
+    const spot = await makeSpot(creator.id)
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/spots/${spot.id}`,
+    })
+    expect(res.statusCode).toBe(401)
+  })
+
+  it('não-criador não cancela (403)', async () => {
+    const creator = await makeUser()
+    const other = await makeUser()
+    const spot = await makeSpot(creator.id)
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/spots/${spot.id}`,
+      headers: auth(other.id),
+    })
+    expect(res.statusCode).toBe(403)
+  })
+
+  it('cancelar é idempotente (204 duas vezes)', async () => {
+    const creator = await makeUser()
+    const spot = await makeSpot(creator.id)
+    const first = await app.inject({
+      method: 'DELETE',
+      url: `/spots/${spot.id}`,
+      headers: auth(creator.id),
+    })
+    const again = await app.inject({
+      method: 'DELETE',
+      url: `/spots/${spot.id}`,
+      headers: auth(creator.id),
+    })
+    expect(first.statusCode).toBe(204)
+    expect(again.statusCode).toBe(204)
+  })
+})
+
 describe('GET /spots (mapa)', () => {
   it('lista spots ativos dentro da bbox', async () => {
     const creator = await makeUser()

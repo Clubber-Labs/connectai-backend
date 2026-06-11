@@ -5,14 +5,21 @@ import {
 } from '../chat/chat.repository'
 import { areMutualFollowers } from '../follows/follows.repository'
 import {
+  cancelSpotById,
   countActiveMembersByConversation,
   createSpotWithConversation,
   findSpotDetail,
+  findSpotForMutation,
   findSpotIdsInBbox,
   findSpotsByIds,
   type SpotDetail,
+  updateSpotById,
 } from './spots.repository'
-import type { CreateSpotBody, ListSpotsQuery } from './spots.schema'
+import type {
+  CreateSpotBody,
+  ListSpotsQuery,
+  UpdateSpotBody,
+} from './spots.schema'
 
 const MAX_ACTIVE_SPOTS = 5
 
@@ -117,4 +124,35 @@ export async function joinSpot(userId: string, id: string) {
 
   await reactivateParticipant(spot.conversationId, userId)
   return { conversationId: spot.conversationId, created: true }
+}
+
+/** Só o criador edita; só título e descrição. */
+export async function editSpot(
+  id: string,
+  requesterId: string,
+  data: UpdateSpotBody,
+) {
+  const spot = await findSpotForMutation(id)
+  if (!spot) throw { statusCode: 404, message: 'Spot não encontrado' }
+  if (spot.creatorId !== requesterId) {
+    throw { statusCode: 403, message: 'Você não tem permissão para editar' }
+  }
+  if (spot.canceledAt) {
+    throw { statusCode: 409, message: 'Spot cancelado não pode ser editado' }
+  }
+  const updated = await updateSpotById(id, data)
+  const counts = await countActiveMembersByConversation([
+    updated.conversationId,
+  ])
+  return shapeSpot(updated, counts.get(updated.conversationId) ?? 0)
+}
+
+/** Só o criador cancela. Idempotente: cancelar de novo é no-op. */
+export async function cancelSpot(id: string, requesterId: string) {
+  const spot = await findSpotForMutation(id)
+  if (!spot) throw { statusCode: 404, message: 'Spot não encontrado' }
+  if (spot.creatorId !== requesterId) {
+    throw { statusCode: 403, message: 'Você não tem permissão para cancelar' }
+  }
+  if (!spot.canceledAt) await cancelSpotById(id, new Date())
 }
