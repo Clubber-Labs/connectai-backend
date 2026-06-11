@@ -25,6 +25,17 @@ export const createSpotSchema = z
     path: ['endsAt'],
   })
 
+// Edição parcial: só título e descrição (horário/categorias/local são imutáveis
+// no PR de domínio). Exige ao menos um campo.
+export const updateSpotSchema = z
+  .object({
+    title: z.string().min(3).optional(),
+    description: z.string().nullable().optional(),
+  })
+  .refine((v) => v.title !== undefined || v.description !== undefined, {
+    message: 'Informe ao menos um campo para atualizar',
+  })
+
 export const spotParamSchema = z.object({
   id: z.string().uuid(),
 })
@@ -51,5 +62,6 @@ export const listSpotsQuerySchema = z
   })
 
 export type CreateSpotBody = z.infer<typeof createSpotSchema>
+export type UpdateSpotBody = z.infer<typeof updateSpotSchema>
 export type SpotParam = z.infer<typeof spotParamSchema>
 export type ListSpotsQuery = z.infer<typeof listSpotsQuerySchema>

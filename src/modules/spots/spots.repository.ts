@@ -88,6 +88,32 @@ export async function findSpotDetail(id: string): Promise<SpotDetail | null> {
   return prisma.spot.findUnique({ where: { id }, select: spotDetailSelect })
 }
 
+/** Campos mínimos para autorizar mutação (dono) e checar estado. */
+export async function findSpotForMutation(id: string) {
+  return prisma.spot.findUnique({
+    where: { id },
+    select: { id: true, creatorId: true, canceledAt: true },
+  })
+}
+
+export async function updateSpotById(
+  id: string,
+  data: { title?: string; description?: string | null },
+): Promise<SpotDetail> {
+  return prisma.spot.update({
+    where: { id },
+    data,
+    select: spotDetailSelect,
+  })
+}
+
+export async function cancelSpotById(id: string, now: Date) {
+  return prisma.spot.update({
+    where: { id },
+    data: { canceledAt: now },
+  })
+}
+
 /** Membros ativos por conversa (batch) — `memberCount` dos balões = participar do chat. */
 export async function countActiveMembersByConversation(
   conversationIds: string[],
