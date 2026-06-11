@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify'
+import { requirePremium } from '../../lib/require-premium'
 import {
   deleteFeaturedEvent,
   postFeaturedEvent,
@@ -17,7 +18,10 @@ export async function featuredEventsRoutes(app: FastifyInstance) {
         params: featuredEventParamsSchema,
         body: createFeaturedEventBodySchema,
       },
-      onRequest: [app.authenticate],
+      // requirePremium = defesa em profundidade (o service já checa
+      // event.author.isPremium). DELETE não exige premium (quem fez downgrade
+      // ainda cancela o destaque que criou).
+      onRequest: [app.authenticate, requirePremium],
     },
     postFeaturedEvent,
   )
