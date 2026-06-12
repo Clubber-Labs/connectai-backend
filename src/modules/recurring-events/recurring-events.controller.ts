@@ -3,10 +3,10 @@ import type { SeriesParams } from './recurring-events.schema'
 import { cancelSeries } from './recurring-events.service'
 
 export async function deleteSeriesHandler(
-  request: FastifyRequest<{ Params: SeriesParams }>,
+  request: FastifyRequest,
   reply: FastifyReply,
 ) {
-  const { seriesId } = request.params
+  const { seriesId } = request.params as SeriesParams
   await cancelSeries(seriesId, request.user.sub)
   request.log.info(
     { userId: request.user.sub, seriesId },
