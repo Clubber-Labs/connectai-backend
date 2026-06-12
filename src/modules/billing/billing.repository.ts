@@ -57,6 +57,21 @@ export async function updateUserStripeCustomerId(
   })
 }
 
+/**
+ * Zera o vínculo com o gateway apenas se ainda aponta pro id esperado —
+ * condicional pra nunca apagar um vínculo recriado em paralelo por outro
+ * fluxo (ensureStripeCustomer).
+ */
+export async function clearUserStripeCustomerIdIfMatches(
+  userId: string,
+  stripeCustomerId: string,
+) {
+  return prisma.user.updateMany({
+    where: { id: userId, stripeCustomerId },
+    data: { stripeCustomerId: null },
+  })
+}
+
 /** Marca/desmarca o cancelamento ao fim do período numa subscription local. */
 export async function setSubscriptionCancelAtPeriodEnd(
   id: string,
@@ -97,6 +112,19 @@ export async function isEventProcessed(stripeEventId: string) {
     select: { id: true },
   })
   return row !== null
+}
+
+/**
+ * Expurgo (retenção/minimização LGPD) dos eventos de webhook processados: o
+ * payload guarda o evento Stripe inteiro (e-mail, nome, dados de cobrança).
+ * A idempotência só precisa de uma janela recente — o Stripe reenvia eventos
+ * por no máximo alguns dias — então linhas além do prazo somem inteiras.
+ */
+export async function deleteWebhookEventsOlderThan(cutoff: Date) {
+  const { count } = await prisma.webhookEvent.deleteMany({
+    where: { processedAt: { lt: cutoff } },
+  })
+  return count
 }
 
 /**
