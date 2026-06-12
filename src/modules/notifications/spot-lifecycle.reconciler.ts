@@ -2,10 +2,6 @@ import { env } from '../../lib/env'
 import { logger } from '../../lib/logger'
 import { realtime } from '../../lib/realtime'
 import {
-  deleteConversation,
-  findActiveParticipantUserIds,
-} from '../chat/chat.repository'
-import {
   deleteCleanableSpot,
   findCleanableSpots,
   findSpotsNeedingRenewalReminder,
@@ -32,7 +28,12 @@ export async function runSpotRenewalReminders(now: Date, leadMs: number) {
   const batch = env.NOTIFY_FANOUT_BATCH_SIZE
   const spots = await findSpotsNeedingRenewalReminder(now, leadMs, batch)
 
-  const created = []
+  // createNotificationIfNew devolve a notificação ou null (dedupe); aqui só
+  // empilhamos as não-nulas, então o array é do tipo já desembrulhado.
+  type CreatedNotification = NonNullable<
+    Awaited<ReturnType<typeof createNotificationIfNew>>
+  >
+  const created: CreatedNotification[] = []
   for (const spot of spots) {
     // CAS: só segue se ESTE tick conseguiu marcar (anti-corrida entre ticks).
     if ((await markSpotRenewalNotified(spot.id, now)) === 0) continue
@@ -90,16 +91,12 @@ export async function runSpotCleanup(now: Date) {
   let deleted = 0
   let graduated = 0
   for (const spot of spots) {
-    // Apaga o spot só se AINDA elegível (se renovou no meio, count 0 → pula).
-    if ((await deleteCleanableSpot(spot.id, now)) === 0) continue
-    // Spot já não existe → ninguém mais entra (join dá 404). Conta os membros.
-    const members = await findActiveParticipantUserIds(spot.conversationId)
-    if (members.length <= 1) {
-      await deleteConversation(spot.conversationId)
-      deleted++
-    } else {
-      graduated++ // chat sobrevive como grupo normal
-    }
+    // Spot + conversa caem juntos numa transação (ou nada cai se renovou no
+    // meio → 'skipped'). 'deleted' = grupo só com o criador apagado junto;
+    // 'graduated' = grupo com outros membros sobrevive como conversa normal.
+    const outcome = await deleteCleanableSpot(spot.id, spot.conversationId, now)
+    if (outcome === 'deleted') deleted++
+    else if (outcome === 'graduated') graduated++
   }
 
   if (deleted > 0 || graduated > 0) {

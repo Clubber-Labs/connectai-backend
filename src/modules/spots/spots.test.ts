@@ -487,6 +487,18 @@ describe('POST /spots/:id/renew (renovar)', () => {
     expect(res.statusCode).toBe(409)
   })
 
+  it('renovar spot cancelado → 409', async () => {
+    const creator = await makeUser()
+    const spot = await makeSpot(creator.id, { canceledAt: new Date() })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/spots/${spot.id}/renew`,
+      headers: auth(creator.id),
+    })
+    expect(res.statusCode).toBe(409)
+  })
+
   it('renovar com a quota diária estourada → 429', async () => {
     const creator = await makeUser()
     const spot = await makeSpot(creator.id)

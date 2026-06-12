@@ -129,12 +129,16 @@ export async function findSpotForRenew(id: string) {
  * a nova janela). O +24h é a partir do endsAt ATUAL, no SQL (atômico).
  */
 export async function renewSpotById(id: string): Promise<SpotDetail | null> {
-  await prisma.$executeRaw`
+  // RETURNING detecta atomicamente se o UPDATE pegou alguma linha — se o spot
+  // sumiu nesse meio-tempo, rows vazio → null (sem um SELECT extra à toa).
+  const rows = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
     UPDATE "spots"
     SET "endsAt" = "endsAt" + interval '24 hours',
         "renewalNotifiedAt" = NULL,
         "updatedAt" = now()
-    WHERE id = ${id}`
+    WHERE id = ${id}
+    RETURNING id`)
+  if (rows.length === 0) return null
   return findSpotDetail(id)
 }
 
@@ -332,20 +336,41 @@ export async function findCleanableSpots(now: Date, limit: number) {
 }
 
 /**
- * Apaga o spot SE ainda elegível (cancelado ou encerrado) — guard anti-corrida
- * com renew (se foi renovado entre a seleção e aqui, não apaga). Retorna o count.
+ * Limpeza atômica de um spot concluído. Numa única transação:
+ *  1. apaga o spot SE ainda elegível (cancelado ou encerrado) — guard anti-corrida
+ *     com renew; se renovou entre a seleção e aqui, count 0 → 'skipped';
+ *  2. com o spot já fora, decide o destino da conversa: se só resta o criador
+ *     (≤1 membro ativo) apaga a conversa junto ('deleted'); senão o grupo
+ *     "gradua" e sobrevive como conversa normal ('graduated').
+ *
+ * A atomicidade é o ponto: spot e conversa caem juntos ou nenhum cai — sem ela,
+ * um crash entre os dois passos deixaria a conversa órfã para sempre (o spot já
+ * não existe, então nenhum tick futuro a recolhe). A ordem respeita a FK
+ * spot→conversation RESTRICT (spot primeiro).
  */
 export async function deleteCleanableSpot(
   spotId: string,
+  conversationId: string,
   now: Date,
-): Promise<number> {
-  const res = await prisma.spot.deleteMany({
-    where: {
-      id: spotId,
-      OR: [{ canceledAt: { not: null } }, { endsAt: { lte: now } }],
-    },
+): Promise<'deleted' | 'graduated' | 'skipped'> {
+  return prisma.$transaction(async (tx) => {
+    const res = await tx.spot.deleteMany({
+      where: {
+        id: spotId,
+        OR: [{ canceledAt: { not: null } }, { endsAt: { lte: now } }],
+      },
+    })
+    if (res.count === 0) return 'skipped'
+
+    const members = await tx.conversationParticipant.count({
+      where: { conversationId, leftAt: null },
+    })
+    if (members <= 1) {
+      await tx.conversation.deleteMany({ where: { id: conversationId } })
+      return 'deleted'
+    }
+    return 'graduated'
   })
-  return res.count
 }
 
 export async function findUserIsPremium(userId: string): Promise<boolean> {
