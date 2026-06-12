@@ -95,6 +95,44 @@ export async function setSubscriptionCancelAtPeriodEnd(
 }
 
 /**
+ * Subscriptions "vencidas": status ainda ativo localmente, mas
+ * currentPeriodEnd além da tolerância — sinal de webhook perdido (renovação
+ * teria avançado o período; cancelamento teria mudado o status). Usa o índice
+ * [status, currentPeriodEnd]. `limit` protege o tick do reconciler de um
+ * backlog gigante; o restante fica pros próximos ticks.
+ */
+export async function findStaleActiveSubscriptions(
+  cutoff: Date,
+  limit: number,
+) {
+  return prisma.subscription.findMany({
+    where: {
+      status: { in: ACTIVE_STATUSES },
+      currentPeriodEnd: { lt: cutoff },
+    },
+    orderBy: { currentPeriodEnd: 'asc' },
+    take: limit,
+    select: { stripeSubscriptionId: true, userId: true },
+  })
+}
+
+/**
+ * Cancela localmente uma subscription que não existe mais no gateway
+ * (resource_missing no re-sync). lastSyncedAt avança junto: eventos de
+ * webhook mais velhos que o sync são descartados pelo ordering check.
+ */
+export async function markSubscriptionCanceledTx(
+  tx: TxClient,
+  stripeSubscriptionId: string,
+  canceledAt: Date,
+) {
+  return tx.subscription.update({
+    where: { stripeSubscriptionId },
+    data: { status: 'CANCELED', canceledAt, lastSyncedAt: canceledAt },
+  })
+}
+
+/**
  * Reads tx-aware usados pelo handler do webhook dentro da $transaction.
  * Mantêm o Prisma confinado ao repository mesmo no caminho transacional — o
  * webhook orquestra, mas não toca o client direto.
