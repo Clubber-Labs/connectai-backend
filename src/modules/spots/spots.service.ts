@@ -5,6 +5,7 @@ import {
   type EnhancedCandidate,
   getSuggestionEnhancer,
 } from '../../lib/suggestion-ai'
+import { findUserIsPremium } from '../billing/billing.repository'
 import { isBlockedEitherWay } from '../blocks/blocks.repository'
 import {
   findActiveParticipant,
@@ -28,7 +29,6 @@ import {
   findSpotIdsInBbox,
   findSpotsByIds,
   findTodayGenerationCount,
-  findUserIsPremium,
   renewSpotById,
   type SpotDetail,
   updateSpotById,

@@ -31,6 +31,21 @@ export async function findUserById(userId: string) {
   return prisma.user.findUnique({ where: { id: userId } })
 }
 
+/**
+ * Fonte de verdade de leitura do estado premium. O billing é dono do conceito
+ * (escreve via recalculateUserPremiumTx); consumidores de fora — o middleware
+ * requirePremium e o módulo spots — leem por aqui em vez de reimplementar a
+ * query contra a coluna. Se "premium" passar a depender de mais de um sinal,
+ * muda só neste ponto.
+ */
+export async function findUserIsPremium(userId: string): Promise<boolean> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { isPremium: true },
+  })
+  return user?.isPremium ?? false
+}
+
 /** Vincula o Customer do Stripe ao user. */
 export async function updateUserStripeCustomerId(
   userId: string,
@@ -51,6 +66,29 @@ export async function setSubscriptionCancelAtPeriodEnd(
     where: { id },
     data: { cancelAtPeriodEnd },
   })
+}
+
+/**
+ * Reads tx-aware usados pelo handler do webhook dentro da $transaction.
+ * Mantêm o Prisma confinado ao repository mesmo no caminho transacional — o
+ * webhook orquestra, mas não toca o client direto.
+ */
+export async function findUserIdByStripeCustomerIdTx(
+  tx: TxClient,
+  stripeCustomerId: string,
+) {
+  const user = await tx.user.findUnique({
+    where: { stripeCustomerId },
+    select: { id: true },
+  })
+  return user?.id ?? null
+}
+
+export async function findSubscriptionByStripeIdTx(
+  tx: TxClient,
+  stripeSubscriptionId: string,
+) {
+  return tx.subscription.findUnique({ where: { stripeSubscriptionId } })
 }
 
 export async function isEventProcessed(stripeEventId: string) {
