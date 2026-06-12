@@ -1118,7 +1118,7 @@ describe('routes E2E', () => {
       expect(res.statusCode).toBe(401)
     })
 
-    it('POST /billing/checkout retorna 200 com token válido', async () => {
+    it('POST /billing/checkout retorna 201 com token válido', async () => {
       const user = await makeUser()
       vi.mocked(stripe.customers.create).mockResolvedValue({
         id: 'cus_e2e',
