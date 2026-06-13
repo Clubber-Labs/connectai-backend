@@ -378,12 +378,30 @@ model Event {
   reports     Report[]
   images      EventImage[]
   features    FeaturedEvent[]
+  analyticsMetrics EventAnalyticsMetric[]
 
   @@index([date])
   @@index([isPublic, date])
   @@index([isFeatured, date, id])
   @@index([categories], type: Gin)
   @@map("events")
+}
+
+enum EventAnalyticsMetricType {
+  VIEW
+  SHARE
+}
+
+model EventAnalyticsMetric {
+  id         String                   @id @default(uuid())
+  eventId    String
+  type       EventAnalyticsMetricType
+  occurredAt DateTime                 @default(now())
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId, type, occurredAt])
+  @@map("event_analytics_metrics")
 }
 
 enum AttendanceType {
