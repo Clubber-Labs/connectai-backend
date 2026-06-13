@@ -383,6 +383,8 @@ model Event {
   @@index([isPublic, date])
   @@index([isFeatured, date, id])
   @@index([categories], type: Gin)
+  // Join de visibilidade do autor (visibleAuthorWhere) na hidratação do mapa.
+  @@index([authorId])
   @@map("events")
 }
 
