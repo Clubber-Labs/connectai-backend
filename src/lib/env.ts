@@ -21,8 +21,17 @@ const baseSchema = z.object({
     .enum(['true', 'false', '1', '0'])
     .default('true')
     .transform((v) => v === 'true' || v === '1'),
-  RATE_LIMIT_MAX_FACTOR: z.coerce.number().positive().default(1),
-  RATE_LIMIT_WINDOW: z.string().default('1 minute'),
+  // .finite() barra Infinity (positivo e numérico, passaria) — manteria max: Infinity.
+  RATE_LIMIT_MAX_FACTOR: z.coerce.number().positive().finite().default(1),
+  // Regex valida o formato do timeWindow no boot (em vez de só quebrar quando o
+  // @fastify/rate-limit tenta parsear a string ao registrar as rotas).
+  RATE_LIMIT_WINDOW: z
+    .string()
+    .regex(
+      /^\d+\s*(ms|milliseconds?|s|seconds?|m|minutes?|h|hours?|d|days?)$/,
+      "RATE_LIMIT_WINDOW deve ser no formato '1 minute', '30 seconds', '1 hour'…",
+    )
+    .default('1 minute'),
   STORAGE_DRIVER: z.enum(['cloudinary', 'local']).optional(),
   UPLOADS_DIR: z.string().optional(),
   // Envio de e-mail (recuperação de senha). Driver `log` (default) só loga o
