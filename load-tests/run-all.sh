@@ -28,7 +28,7 @@ if ! curl -fsS "$BASE_URL/health" >/dev/null 2>&1; then
 fi
 echo "✓ API no ar"
 
-run() {
+_run() {
   local script="$1"
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -36,14 +36,21 @@ run() {
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   K6_BASE_URL="$BASE_URL" RESULTS_DIR="results" \
     K6_SUMMARY_TREND_STATS="avg,min,med,max,p(90),p(95),p(99)" \
-    k6 run "$script" || true
+    k6 run "$script"
 }
 
-run 00-smoke.js
-run 01-geo-baseline.js
-run 02-geo-stress.js
-run 03-spike.js
-run 04-authenticated.js
+# Smoke é GATE: se a sanidade falhar (API fora, /health 5xx), aborta — não
+# adianta rodar os demais cenários contra uma API quebrada.
+run_gate() { _run "$1"; }
+# Cenários de carga: falha de threshold (p95/erro) é resultado a registrar,
+# não motivo pra abortar a sequência — por isso o `|| true`.
+run_observe() { _run "$1" || true; }
+
+run_gate 00-smoke.js
+run_observe 01-geo-baseline.js
+run_observe 02-geo-stress.js
+run_observe 03-spike.js
+run_observe 04-authenticated.js
 
 echo ""
 echo "ℹ A demonstração de rate limit (05) precisa de DOIS estados da API."

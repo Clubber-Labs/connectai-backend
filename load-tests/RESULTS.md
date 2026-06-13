@@ -37,6 +37,14 @@ Leitura:
 - Sob stress/spike o endpoint geo atinge o ponto de saturação (latências de
   segundos a timeout), evidenciando o limite de capacidade de um único processo.
 
+> **Modelo de carga (declarar na defesa):** o cenário autenticado usa **um único
+> usuário compartilhado** (`premium@conectai.dev`) — o `setup()` loga uma vez e
+> todos os VUs reusam o mesmo JWT, com **think time = 0**. Isso é carga
+> sintética de stress, não tráfego multi-usuário realista: o feed personalizado
+> retorna o mesmo conteúdo (favorecendo cache) e um eventual rate limit por
+> usuário incidiria sobre um só `sub`. Para números representativos de produção,
+> usar uma pool de usuários e think time > 0.
+
 ## Demonstração do rate limiting (`GET /events/search`, teto 30/min)
 
 Mesmo cenário (50 req/s por 30 s = 1.501 requisições) contra a API nas duas configs:

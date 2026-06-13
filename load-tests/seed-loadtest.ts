@@ -32,6 +32,16 @@ const CATEGORIES: EventCategory[] = [
 ]
 
 async function main() {
+  // Guard de ambiente: o script faz deleteMany. Rodado com uma DATABASE_URL de
+  // staging/prod (ex.: .env errado no terminal), limparia eventos [loadtest] do
+  // ambiente-alvo antes de inserir. Só roda contra banco local/dev/test.
+  const dbUrl = process.env.DATABASE_URL ?? ''
+  if (!/(localhost|127\.0\.0\.1|conectai_dev|conectai_test)/.test(dbUrl)) {
+    throw new Error(
+      `DATABASE_URL não aponta para um banco local/dev/test — abortando para evitar deleção acidental.\nValor: "${dbUrl}"`,
+    )
+  }
+
   const users = await prisma.user.findMany({ select: { id: true } })
   if (users.length === 0) {
     throw new Error('Nenhum usuário no banco. Rode `pnpm db:seed` antes.')
