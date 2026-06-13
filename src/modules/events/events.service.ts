@@ -179,12 +179,12 @@ type SharedViewport = { events: SharedEvent[]; truncated: boolean }
 
 // Índices inteiros do tile (estáveis, sem ruído de float na chave de cache).
 function tileIndices(query: ViewportQuery) {
-  const s = VIEWPORT_TILE_DEG
+  const step = VIEWPORT_TILE_DEG
   return {
-    n: Math.ceil(query.bboxNorth / s),
-    s: Math.floor(query.bboxSouth / s),
-    e: Math.ceil(query.bboxEast / s),
-    w: Math.floor(query.bboxWest / s),
+    n: Math.ceil(query.bboxNorth / step),
+    s: Math.floor(query.bboxSouth / step),
+    e: Math.ceil(query.bboxEast / step),
+    w: Math.floor(query.bboxWest / step),
   }
 }
 
