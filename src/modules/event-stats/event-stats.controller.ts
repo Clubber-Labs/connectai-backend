@@ -7,44 +7,44 @@ import {
 } from './event-stats.service'
 
 export async function getEventStatsHandler(
-  request: FastifyRequest,
+  request: FastifyRequest<{
+    Params: EventStatsParams
+    Querystring: EventStatsQuery
+  }>,
   reply: FastifyReply,
 ) {
-  const { id } = request.params as EventStatsParams
-  const { refresh } = request.query as EventStatsQuery
-  const stats = await getEventStats(id, request.user.sub, { refresh })
+  const stats = await getEventStats(request.params.id, request.user.sub, {
+    refresh: request.query.refresh,
+  })
   return reply.send(stats)
 }
 
 export async function exportStatsHandler(
-  request: FastifyRequest,
+  request: FastifyRequest<{ Params: EventStatsParams }>,
   reply: FastifyReply,
 ) {
-  const { id } = request.params as EventStatsParams
-  const csv = await exportEventStatsCsv(id, request.user.sub)
+  const csv = await exportEventStatsCsv(request.params.id, request.user.sub)
   return reply
     .header('Content-Type', 'text/csv; charset=utf-8')
     .header(
       'Content-Disposition',
-      `attachment; filename="event-${id}-stats.csv"`,
+      `attachment; filename="event-${request.params.id}-stats.csv"`,
     )
     .send(csv)
 }
 
 export async function trackViewHandler(
-  request: FastifyRequest,
+  request: FastifyRequest<{ Params: EventStatsParams }>,
   reply: FastifyReply,
 ) {
-  const { id } = request.params as EventStatsParams
-  await trackEventAnalyticsMetric(id, request.user.sub, 'VIEW')
+  await trackEventAnalyticsMetric(request.params.id, request.user.sub, 'VIEW')
   return reply.status(204).send()
 }
 
 export async function trackShareHandler(
-  request: FastifyRequest,
+  request: FastifyRequest<{ Params: EventStatsParams }>,
   reply: FastifyReply,
 ) {
-  const { id } = request.params as EventStatsParams
-  await trackEventAnalyticsMetric(id, request.user.sub, 'SHARE')
+  await trackEventAnalyticsMetric(request.params.id, request.user.sub, 'SHARE')
   return reply.status(204).send()
 }

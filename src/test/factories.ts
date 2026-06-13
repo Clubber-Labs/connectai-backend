@@ -388,10 +388,6 @@ export async function makeBlock(blockerId: string, blockedId: string) {
   })
 }
 
-/**
- * Cria um spot já publicado: a conversa GROUP aberta (criador como ADMIN) + o
- * spot ligado a ela. Janela ativa por padrão (começou há 1h, termina em 3h).
- */
 export async function makeAnalyticsMetric(
   eventId: string,
   type: 'VIEW' | 'SHARE',
@@ -402,6 +398,10 @@ export async function makeAnalyticsMetric(
   })
 }
 
+/**
+ * Cria um spot já publicado: a conversa GROUP aberta (criador como ADMIN) + o
+ * spot ligado a ela. Janela ativa por padrão (começou há 1h, termina em 3h).
+ */
 export async function makeSpot(
   creatorId: string,
   overrides: {

@@ -243,6 +243,21 @@ describe('POST /events/:id/analytics/view', () => {
 
     expect(res.statusCode).toBe(401)
   })
+
+  it('retorna 403 ao tentar registrar view em evento privado sem acesso', async () => {
+    const author = await makeUser({ isPremium: true })
+    const event = await makeEvent(author.id, { isPublic: false })
+    const outsider = await makeUser()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: viewUrl(event.id),
+      headers: { authorization: `Bearer ${token(app, outsider.id)}` },
+      payload: {},
+    })
+
+    expect(res.statusCode).toBe(403)
+  })
 })
 
 describe('POST /events/:id/analytics/share', () => {
@@ -267,6 +282,34 @@ describe('POST /events/:id/analytics/share', () => {
     })
     expect(stats.json().totals.shares).toBe(1)
     expect(stats.json().timeline).toHaveLength(1)
+  })
+
+  it('retorna 401 para compartilhamento sem autenticação', async () => {
+    const author = await makeUser({ isPremium: true })
+    const event = await makeEvent(author.id, { isPublic: true })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: shareUrl(event.id),
+      payload: {},
+    })
+
+    expect(res.statusCode).toBe(401)
+  })
+
+  it('retorna 403 ao tentar registrar share em evento privado sem acesso', async () => {
+    const author = await makeUser({ isPremium: true })
+    const event = await makeEvent(author.id, { isPublic: false })
+    const outsider = await makeUser()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: shareUrl(event.id),
+      headers: { authorization: `Bearer ${token(app, outsider.id)}` },
+      payload: {},
+    })
+
+    expect(res.statusCode).toBe(403)
   })
 })
 

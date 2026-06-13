@@ -7,13 +7,15 @@ import {
   trackViewHandler,
 } from './event-stats.controller'
 import {
+  type EventStatsParams,
+  type EventStatsQuery,
   eventStatsParamsSchema,
   eventStatsQuerySchema,
   eventStatsSchema,
 } from './event-stats.schema'
 
 export async function eventStatsRoutes(app: FastifyInstance) {
-  app.get(
+  app.get<{ Params: EventStatsParams; Querystring: EventStatsQuery }>(
     '/events/:id/stats',
     {
       schema: {
@@ -28,18 +30,16 @@ export async function eventStatsRoutes(app: FastifyInstance) {
     getEventStatsHandler,
   )
 
-  app.get(
+  app.get<{ Params: EventStatsParams }>(
     '/events/:id/stats/export',
     {
-      schema: {
-        params: eventStatsParamsSchema,
-      },
+      schema: { params: eventStatsParamsSchema },
       onRequest: [app.authenticate, requirePremium],
     },
     exportStatsHandler,
   )
 
-  app.post(
+  app.post<{ Params: EventStatsParams }>(
     '/events/:id/analytics/view',
     {
       schema: { params: eventStatsParamsSchema },
@@ -48,7 +48,7 @@ export async function eventStatsRoutes(app: FastifyInstance) {
     trackViewHandler,
   )
 
-  app.post(
+  app.post<{ Params: EventStatsParams }>(
     '/events/:id/analytics/share',
     {
       schema: { params: eventStatsParamsSchema },
