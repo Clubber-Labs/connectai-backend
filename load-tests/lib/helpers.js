@@ -26,7 +26,7 @@ export const SEED_USER = {
 
 // Monta a querystring do viewport (GET /events/map/events).
 export function viewportUrl(extra = {}) {
-  const params = { ...BBOX, limit: 200, ...extra }
+  const params = { ...BBOX, limit: 100, ...extra }
   const qs = Object.entries(params)
     .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
     .join('&')
