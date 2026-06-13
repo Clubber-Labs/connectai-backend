@@ -1400,6 +1400,49 @@ describe('processStripeWebhook', () => {
       })
       expect(refreshed?.isPremium).toBe(true)
     })
+
+    it('setup_intent.succeeded atrasado, com trial já CANCELED, NÃO destrava premium', async () => {
+      // Replay tardio: user abandonou a sheet, missing_payment_method cancelou o
+      // trial ao fim dos 7 dias, e o setup_intent.succeeded chega atrasado (o
+      // Stripe reenvia por dias). O filtro status:'TRIALING' não toca a CANCELED
+      // → segue sem cartão e sem premium.
+      const user = await makeUser({ isPremium: false })
+      await testPrisma.user.update({
+        where: { id: user.id },
+        data: { stripeCustomerId: 'cus_late_setup' },
+      })
+      const sub = await makeSubscription(user.id, {
+        status: 'CANCELED',
+        defaultPaymentMethodId: null,
+      })
+      const event = {
+        id: `evt_setup_late_${Date.now()}`,
+        type: 'setup_intent.succeeded',
+        created: Math.floor(Date.now() / 1000),
+        data: {
+          object: {
+            id: 'seti_late',
+            customer: 'cus_late_setup',
+            payment_method: 'pm_card_visa',
+          },
+        },
+        // biome-ignore lint/suspicious/noExplicitAny: fixture de payload Stripe
+      } as any
+      vi.mocked(stripe.webhooks.constructEvent).mockReturnValue(event)
+
+      await processStripeWebhook(Buffer.from('x'), 'sig')
+
+      const reloaded = await testPrisma.subscription.findUnique({
+        where: { id: sub.id },
+      })
+      expect(reloaded?.status).toBe('CANCELED')
+      expect(reloaded?.defaultPaymentMethodId).toBeNull()
+
+      const refreshed = await testPrisma.user.findUnique({
+        where: { id: user.id },
+      })
+      expect(refreshed?.isPremium).toBe(false)
+    })
   })
 
   describe('ordering check', () => {

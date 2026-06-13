@@ -260,13 +260,28 @@ async function applyLocalMutations(
         // é o sinal de que o cartão entrou no trial — carimba o
         // defaultPaymentMethodId na subscription TRIALING e recalcula o premium
         // (sem o cartão, um trial não vale premium — ver recalculateUserPremiumTx).
+        //
+        // Sem ordering check (ao contrário dos outros cases): a mutação é
+        // additive-only — só preenche defaultPaymentMethodId onde está null, sem
+        // tocar status. Replay atrasado é idempotente (a 2ª passada filtra a
+        // linha já carimbada → 0 linhas); e se o trial já virou CANCELED, o
+        // filtro status:'TRIALING' não o toca.
         const refs = extractSetupIntentRefs(
           event.data.object as StripeSetupIntentLike,
         )
         if (!refs) return
 
         const userId = await findUserIdByStripeCustomerIdTx(tx, refs.customerId)
-        if (!userId) return
+        if (!userId) {
+          // Cartão confirmado mas sem user vinculado (Customer de outro
+          // ambiente, deletado antes do evento, etc.): logar — senão "paguei e
+          // não virei premium" vira um silêncio difícil de diagnosticar.
+          console.warn(
+            '[billing] setup_intent.succeeded sem user vinculado ao customerId',
+            { customerId: refs.customerId },
+          )
+          return
+        }
 
         await setTrialingPaymentMethodTx(tx, userId, refs.paymentMethodId)
         await recalculateUserPremiumTx(tx, userId)

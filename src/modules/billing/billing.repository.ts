@@ -287,6 +287,12 @@ export async function recalculateUserPremiumTx(tx: TxClient, userId: string) {
  * premium do trial (ver recalculateUserPremiumTx). updateMany + filtro
  * `defaultPaymentMethodId: null` torna idempotente: reentregas do webhook não
  * sobrescrevem nem afetam linhas já carimbadas. Retorna a contagem afetada.
+ *
+ * updateMany (e não um stripeSubscriptionId específico) é intencional: o
+ * setup_intent não referencia a subscription, e um user que chamou subscribe
+ * em buckets de minuto distintos pode ter mais de uma TRIALING órfã — todas
+ * são carimbadas. Inofensivo: ele vira premium de um jeito ou de outro, e as
+ * órfãs sem cobrança real cancelam no fim do trial (missing_payment_method).
  */
 export async function setTrialingPaymentMethodTx(
   tx: TxClient,
