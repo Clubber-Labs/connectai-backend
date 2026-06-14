@@ -4,6 +4,7 @@
 import './instrumentation'
 
 import { fastifyCors } from '@fastify/cors'
+import { fastifyHelmet } from '@fastify/helmet'
 import fastifyJwt from '@fastify/jwt'
 import fastifyMultipart from '@fastify/multipart'
 import { fastifyRateLimit } from '@fastify/rate-limit'
@@ -87,8 +88,18 @@ app.setErrorHandler(errorHandler)
 app.register(requestIdPlugin)
 app.register(metricsPlugin)
 
+// Headers de segurança (clickjacking, MIME sniffing, HSTS, etc.). CSP fica
+// desligada: a API serve JSON; o Scalar (/docs) precisaria de uma policy própria
+// e a app é consumida por cliente nativo, não por páginas servidas daqui.
+app.register(fastifyHelmet, {
+  contentSecurityPolicy: false,
+})
+
+// CORS: em produção exigimos allowlist explícita (env.CORS_ALLOWED_ORIGINS);
+// sem ela (dev/test) refletimos a Origin — conveniente localmente. Evita o
+// `origin: true` global, que refletia QUALQUER origem com credentials.
 app.register(fastifyCors, {
-  origin: true,
+  origin: env.CORS_ALLOWED_ORIGINS ?? true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   credentials: true,
 })
@@ -121,6 +132,10 @@ if (env.STORAGE_DRIVER === 'local') {
 
 app.register(fastifyJwt, {
   secret: env.JWT_SECRET,
+  // Expiração padrão dos tokens de sessão (antes eram emitidos sem `exp` e
+  // valiam para sempre). O token de matrícula de MFA passa o seu próprio
+  // `expiresIn: '15m'` no jwtSign, que sobrescreve este default.
+  sign: { expiresIn: env.JWT_EXPIRES_IN },
 })
 
 registerAuthDecorators(app)

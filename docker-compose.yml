@@ -4,7 +4,9 @@ services:
     container_name: conectai-postgres
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      # Bind só no loopback: o banco não deve ficar acessível pela rede/LAN.
+      # (antes "5432:5432" publicava em 0.0.0.0). O app local conecta via 127.0.0.1.
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -23,7 +25,8 @@ services:
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "6379:6379"
+      # Redis sem autenticação — manter só no loopback (antes "6379:6379" em 0.0.0.0).
+      - "127.0.0.1:6379:6379"
     volumes:
       - conectai_redis_data:/data
     healthcheck:

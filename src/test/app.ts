@@ -64,6 +64,9 @@ export function buildApp() {
 
   app.register(fastifyJwt, {
     secret: process.env.JWT_SECRET ?? 'test_secret',
+    // Paridade com o server de produção: tokens de sessão expiram (o enrollment
+    // de MFA sobrescreve com seu próprio expiresIn no jwtSign).
+    sign: { expiresIn: process.env.JWT_EXPIRES_IN ?? '7d' },
   })
 
   registerAuthDecorators(app)
