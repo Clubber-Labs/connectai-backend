@@ -25,6 +25,7 @@ import { errorHandler } from './lib/error-handler'
 import { buildLoggerOptions } from './lib/logger'
 import { redis } from './lib/redis'
 import { genReqId } from './lib/request-id'
+import { adminConsentRoutes } from './modules/admin-consent/admin-consent.routes'
 import { attendanceRoutes } from './modules/attendance/attendance.routes'
 import { authRoutes } from './modules/auth/auth.routes'
 import {
@@ -165,6 +166,7 @@ app.register(eventStatsRoutes)
 app.register(featuredEventsRoutes)
 app.register(usersRoutes)
 app.register(consentRoutes)
+app.register(adminConsentRoutes)
 app.register(followsRoutes)
 app.register(attendanceRoutes)
 app.register(postsRoutes)

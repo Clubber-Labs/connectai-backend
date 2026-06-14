@@ -12,6 +12,7 @@ import { env } from '../lib/env'
 import { errorHandler } from '../lib/error-handler'
 import { redis } from '../lib/redis'
 import { genReqId } from '../lib/request-id'
+import { adminConsentRoutes } from '../modules/admin-consent/admin-consent.routes'
 import { attendanceRoutes } from '../modules/attendance/attendance.routes'
 import { authRoutes } from '../modules/auth/auth.routes'
 import {
@@ -94,6 +95,7 @@ export function buildApp() {
   app.register(chatRoutes)
   app.register(spotsRoutes)
   app.register(consentRoutes)
+  app.register(adminConsentRoutes)
   app.register(notificationsRoutes)
 
   return app
