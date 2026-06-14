@@ -16,10 +16,9 @@ RUN pnpm install --frozen-lockfile
 # Código + gera o Prisma Client + compila (tsc -> dist).
 COPY . .
 RUN pnpm db:generate && pnpm build
-# Remove as devDependencies (TypeScript, Vitest, Biome, prisma CLI...) — a imagem
-# final só roda `node dist/server.js`. O @prisma/client (prod) e o engine já
-# gerado em node_modules/.prisma permanecem.
-RUN pnpm prune --prod
+# NÃO rodar `pnpm prune --prod` aqui: a imagem sobe em NODE_ENV=development (a
+# production tropeçaria nas guards do env.ts — Stripe/Cloudinary/e-mail), e o
+# logger usa `pino-pretty` (devDependency) nesse modo. Prune quebraria o boot.
 
 # ── runtime ───────────────────────────────────────────────────────────────────
 FROM node:24-slim AS runtime
