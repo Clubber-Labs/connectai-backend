@@ -84,6 +84,16 @@ const baseSchema = z.object({
     .enum(['true', 'false', '1', '0'])
     .default('true')
     .transform((v) => v === 'true' || v === '1'),
+  // Reposição de ocorrências de séries recorrentes (RF11.6). Default 6h.
+  RECURRENCE_RECONCILE_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(21_600_000),
+  RECURRENCE_RECONCILE_ENABLED: z
+    .enum(['true', 'false', '1', '0'])
+    .default('true')
+    .transform((v) => v === 'true' || v === '1'),
   STRIPE_SECRET_KEY: z
     .string()
     .regex(
@@ -353,6 +363,8 @@ export const env = {
   PROMOTION_DIGEST_INTERVAL_MS: parsed.PROMOTION_DIGEST_INTERVAL_MS,
   PROMOTION_DIGEST_COOLDOWN_DAYS: parsed.PROMOTION_DIGEST_COOLDOWN_DAYS,
   PROMOTION_DIGEST_ACTIVE_USER_DAYS: parsed.PROMOTION_DIGEST_ACTIVE_USER_DAYS,
+  RECURRENCE_RECONCILE_INTERVAL_MS: parsed.RECURRENCE_RECONCILE_INTERVAL_MS,
+  RECURRENCE_RECONCILE_ENABLED: parsed.RECURRENCE_RECONCILE_ENABLED,
   STRIPE_SECRET_KEY: parsed.STRIPE_SECRET_KEY,
   STRIPE_WEBHOOK_SECRET: parsed.STRIPE_WEBHOOK_SECRET,
   STRIPE_PREMIUM_PRICE_ID: parsed.STRIPE_PREMIUM_PRICE_ID,

@@ -60,6 +60,8 @@ import { startPasswordResetCleanupReconciler } from './modules/password-reset/pa
 import { passwordResetRoutes } from './modules/password-reset/password-reset.routes'
 import { postsRoutes } from './modules/posts/posts.routes'
 import { reactionsRoutes } from './modules/reactions/reactions.routes'
+import { startRecurringEventsReconciler } from './modules/recurring-events/recurring-events.reconciler'
+import { recurringEventsRoutes } from './modules/recurring-events/recurring-events.routes'
 import { reportsRoutes } from './modules/reports/reports.routes'
 import { socialAuthRoutes } from './modules/social-auth/social-auth.routes'
 import { spotsRoutes } from './modules/spots/spots.routes'
@@ -155,6 +157,7 @@ app.register(passwordResetRoutes)
 app.register(categoriesRoutes)
 app.register(eventsRoutes)
 app.register(eventStatsRoutes)
+app.register(recurringEventsRoutes)
 app.register(featuredEventsRoutes)
 app.register(usersRoutes)
 app.register(consentRoutes)
@@ -212,6 +215,9 @@ app.listen({ port: env.PORT, host: '0.0.0.0' }).then(() => {
     env.PROMOTION_DIGEST_ENABLED
   ) {
     startPromotedDigestReconciler(env.PROMOTION_DIGEST_INTERVAL_MS)
+  }
+  if (env.NODE_ENV !== 'test' && env.RECURRENCE_RECONCILE_ENABLED) {
+    startRecurringEventsReconciler(env.RECURRENCE_RECONCILE_INTERVAL_MS)
   }
   if (env.NODE_ENV !== 'test' && env.ACCOUNT_DELETION_ENABLED) {
     startAccountDeletionReconciler(env.ACCOUNT_DELETION_INTERVAL_MS)

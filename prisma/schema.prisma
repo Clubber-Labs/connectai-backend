@@ -28,26 +28,26 @@ enum AccountStatus {
 }
 
 model User {
-  id             String    @id @default(uuid())
-  name           String
-  lastname       String
-  username       String    @unique
-  email          String    @unique
-  password       String?
-  phone          String?   @unique
-  bio            String?
-  avatarUrl      String?
-  avatarKey      String?
-  isPrivate      Boolean  @default(false)
-  isPremium      Boolean  @default(false)
-  stripeCustomerId String? @unique
-  role           UserRole @default(USER)
-  followersCount Int      @default(0)
-  followingCount Int      @default(0)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  birthdate      DateTime?
-  lastSeenAt     DateTime?
+  id               String    @id @default(uuid())
+  name             String
+  lastname         String
+  username         String    @unique
+  email            String    @unique
+  password         String?
+  phone            String?   @unique
+  bio              String?
+  avatarUrl        String?
+  avatarKey        String?
+  isPrivate        Boolean   @default(false)
+  isPremium        Boolean   @default(false)
+  stripeCustomerId String?   @unique
+  role             UserRole  @default(USER)
+  followersCount   Int       @default(0)
+  followingCount   Int       @default(0)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  birthdate        DateTime?
+  lastSeenAt       DateTime?
 
   // Localização grosseira (geohash) para notificações por proximidade. A coluna
   // `location` geography é GERADA via SQL cru (ST_PointFromGeoHash), fora do
@@ -85,6 +85,7 @@ model User {
 
   featuredEventsCreated FeaturedEvent[] @relation("featuredEventCreator")
   subscriptions         Subscription[]
+  eventSeries           EventSeries[]
 
   categoryPreferences UserCategoryPreference[]
 
@@ -352,7 +353,7 @@ model Follow {
 }
 
 model Event {
-  id          String          @id @default(uuid())
+  id          String        @id @default(uuid())
   title       String
   description String?
   date        DateTime
@@ -364,12 +365,17 @@ model Event {
   isPublic    Boolean         @default(true)
   isFeatured  Boolean         @default(false)
   maxCapacity Int?
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
   canceledAt  DateTime?
 
   authorId String
   author   User   @relation(fields: [authorId], references: [id])
+
+  // Ocorrência de uma série recorrente (RF11.6). null = evento avulso. SetNull:
+  // apagar a série não apaga as ocorrências já materializadas.
+  seriesId String?
+  series   EventSeries? @relation(fields: [seriesId], references: [id], onDelete: SetNull)
 
   attendances EventAttendance[]
   posts       Post[]
@@ -380,11 +386,59 @@ model Event {
   images      EventImage[]
   features    FeaturedEvent[]
 
+  // Único: uma ocorrência por (série, data). Torna a reposição idempotente e
+  // segura contra reconcilers concorrentes. seriesId NULL é distinto no
+  // Postgres, então eventos avulsos não são afetados.
+  @@unique([seriesId, date])
   @@index([date])
   @@index([isPublic, date])
   @@index([isFeatured, date, id])
   @@index([categories], type: Gin)
   @@map("events")
+}
+
+enum RecurrenceFrequency {
+  WEEKLY
+  MONTHLY
+}
+
+// Série de eventos recorrentes (RF11.6, premium). A regra mora aqui; cada
+// ocorrência é um Event materializado com seriesId apontando pra cá. O
+// reconciler repõe ocorrências futuras até um horizonte rolante quando
+// `until` é null. `count` (alternativa a `until`) limita o total de ocorrências.
+// MONTHLY usa o mesmo dia do mês com clamp para o último dia em meses curtos;
+// datas são UTC, então o horário local pode deslocar em mudanças de fuso/DST.
+model EventSeries {
+  id         String              @id @default(uuid())
+  frequency  RecurrenceFrequency
+  interval   Int                 @default(1)
+  until      DateTime?
+  count      Int?
+  authorId   String
+  author     User                @relation(fields: [authorId], references: [id])
+  canceledAt DateTime?
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+
+  // Template de conteúdo da série: o reconciler clona DESTES campos (não da
+  // última ocorrência), então editar uma ocorrência individual não propaga
+  // para as ocorrências geradas depois. Nullable: séries antigas não têm
+  // template e o reconciler as pula. durationMs = endDate-date da 1ª ocorrência.
+  title       String?
+  description String?
+  latitude    Float?
+  longitude   Float?
+  address     String?
+  categories  EventCategory[]
+  maxCapacity Int?
+  isPublic    Boolean         @default(true)
+  durationMs  Int?
+
+  events Event[]
+
+  // Predicado do reconciler: séries vivas que ainda podem crescer.
+  @@index([canceledAt, until])
+  @@map("event_series")
 }
 
 enum AttendanceType {
