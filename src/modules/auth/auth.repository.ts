@@ -6,13 +6,14 @@ export async function findUserByEmail(email: string) {
   })
 }
 
+// Recovery codes não são lidos em memória — o consumo é direto no banco
+// (consumeRecoveryCode). Não buscar os hashes evita trazer dado sensível à toa.
 const mfaSelect = {
   id: true,
   email: true,
   role: true,
   mfaEnabled: true,
   mfaSecret: true,
-  mfaRecoveryCodes: true,
 } as const
 
 export async function findUserMfaById(id: string) {
