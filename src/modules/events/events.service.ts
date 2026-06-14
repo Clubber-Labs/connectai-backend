@@ -244,15 +244,32 @@ export async function getEventById(id: string, requesterId?: string) {
     requesterId,
   )
 
-  if (!requesterId) return hydrateAnon(event)
-
+  // Participantes em destaque (amigos primeiro) para a prova social "quem vai"
+  // no detalhe — mesma fonte do mapa e do feed.
+  const followingIds = requesterId
+    ? await findAcceptedFollowingIds(requesterId)
+    : []
   const commentIds = event.recentComments.map((c) => c.id)
-  const states = await findViewerStatesForEvents(
-    requesterId,
-    [event.id],
-    commentIds,
-  )
-  return hydrateWithState(event, states.get(event.id))
+  // topAttendances e viewerStates são independentes: uma só depende de
+  // followingIds, a outra do requesterId. Paralelizamos como no viewport.
+  const [topMap, states] = await Promise.all([
+    findTopAttendancesByEvent([event.id], followingIds),
+    requesterId
+      ? findViewerStatesForEvents(requesterId, [event.id], commentIds)
+      : Promise.resolve(null),
+  ])
+  // friendAttendances é o subconjunto de amigos do topAttendances (mesma fonte,
+  // sem segunda query) — alinhado com viewport e feed.
+  const top = topMap.get(event.id) ?? []
+  const topAttendances = top.map((a) => ({ user: a.user }))
+  const friendAttendances = top
+    .filter((a) => a.isFriend)
+    .map((a) => ({ user: a.user }))
+
+  const normalized = states
+    ? hydrateWithState(event, states.get(event.id))
+    : hydrateAnon(event)
+  return { ...normalized, topAttendances, friendAttendances }
 }
 
 export async function addEvent(data: CreateEventBody, authorId: string) {
