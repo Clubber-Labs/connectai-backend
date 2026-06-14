@@ -154,7 +154,7 @@ docker compose -f docker-compose.yml -f load-tests/docker-compose.cluster-overri
   --profile cluster up --build --scale api=1 -d      # depois --scale api=2, api=3
 
 # aplica a carga apontando para o LB (não para uma réplica)
-k6 run -e K6_BASE_URL=http://localhost:3333 -e RATE=600 load-tests/06-cluster-scale.js
+k6 run -e K6_BASE_URL=http://localhost:3333 -e VUS=50 load-tests/06-cluster-scale.js
 docker stats   # CPU por réplica durante o teste
 ```
 
