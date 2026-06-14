@@ -53,6 +53,7 @@ cenário (carga, stress, spike, arrival-rate) e exportar os resultados em JSON.
 | 03 | `03-spike.js` | `GET /events/map/events` | Pico súbito de tráfego (arrival-rate) |
 | 04 | `04-authenticated.js` | `GET /feed`, `GET /events` | Caminho real autenticado (login + Bearer) |
 | 05 | `05-rate-limit-demo.js` | `GET /events/search` | Comprovação do throttling (429 com/sem limite) |
+| 06 | `06-cluster-scale.js` | `GET /events/map/events` | Escala horizontal (cluster nginx — ver seção abaixo) |
 
 `GET /events/map/events` é o alvo principal: é o endpoint mais pesado (consulta
 PostGIS de bounding box + hidratação completa dos eventos), o melhor para
