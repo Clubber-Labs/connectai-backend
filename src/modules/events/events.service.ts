@@ -307,18 +307,16 @@ export async function getEventById(id: string, requesterId?: string) {
 
   // Participantes em destaque (amigos primeiro) para a prova social "quem vai"
   // no detalhe — mesma fonte do mapa e do feed.
-  const followingIds = requesterId
-    ? await findAcceptedFollowingIds(requesterId)
-    : []
   const commentIds = event.recentComments.map((c) => c.id)
-  // topAttendances e viewerStates são independentes: uma só depende de
-  // followingIds, a outra do requesterId. Paralelizamos como no viewport.
-  const [topMap, states] = await Promise.all([
-    findTopAttendancesByEvent([event.id], followingIds),
+  // followingIds e viewerStates só dependem do requesterId (não um do outro):
+  // vão juntos. topAttendances depende de followingIds, então fecha o caminho.
+  const [followingIds, states] = await Promise.all([
+    requesterId ? findAcceptedFollowingIds(requesterId) : Promise.resolve([]),
     requesterId
       ? findViewerStatesForEvents(requesterId, [event.id], commentIds)
       : Promise.resolve(null),
   ])
+  const topMap = await findTopAttendancesByEvent([event.id], followingIds)
   // friendAttendances é o subconjunto de amigos do topAttendances (mesma fonte,
   // sem segunda query) — alinhado com viewport e feed.
   const top = topMap.get(event.id) ?? []
