@@ -38,6 +38,7 @@ import { categoriesRoutes } from './modules/categories/categories.routes'
 import { chatGateway } from './modules/chat/chat.gateway'
 import { chatRoutes } from './modules/chat/chat.routes'
 import { commentsRoutes } from './modules/comments/comments.routes'
+import { adminConsentRoutes } from './modules/admin-consent/admin-consent.routes'
 import { consentRoutes } from './modules/consent/consent.routes'
 import { eventInvitesRoutes } from './modules/event-invites/event-invites.routes'
 import { eventStatsRoutes } from './modules/event-stats/event-stats.routes'
@@ -165,6 +166,7 @@ app.register(eventStatsRoutes)
 app.register(featuredEventsRoutes)
 app.register(usersRoutes)
 app.register(consentRoutes)
+app.register(adminConsentRoutes)
 app.register(followsRoutes)
 app.register(attendanceRoutes)
 app.register(postsRoutes)

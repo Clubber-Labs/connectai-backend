@@ -22,6 +22,7 @@ import { blocksRoutes } from '../modules/blocks/blocks.routes'
 import { categoriesRoutes } from '../modules/categories/categories.routes'
 import { chatRoutes } from '../modules/chat/chat.routes'
 import { commentsRoutes } from '../modules/comments/comments.routes'
+import { adminConsentRoutes } from '../modules/admin-consent/admin-consent.routes'
 import { consentRoutes } from '../modules/consent/consent.routes'
 import { eventInvitesRoutes } from '../modules/event-invites/event-invites.routes'
 import { eventStatsRoutes } from '../modules/event-stats/event-stats.routes'
@@ -94,6 +95,7 @@ export function buildApp() {
   app.register(chatRoutes)
   app.register(spotsRoutes)
   app.register(consentRoutes)
+  app.register(adminConsentRoutes)
   app.register(notificationsRoutes)
 
   return app
