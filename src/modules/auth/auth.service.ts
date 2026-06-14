@@ -123,7 +123,10 @@ export async function markRefreshTokenRotated(
 }
 
 // Logout: revoga o refresh apresentado (restrito ao dono autenticado).
-export async function revokeRefreshTokenForUser(rawToken: string, userId: string) {
+export async function revokeRefreshTokenForUser(
+  rawToken: string,
+  userId: string,
+) {
   await revokeRefreshTokenByHash(hashRefreshToken(rawToken), userId)
 }
 

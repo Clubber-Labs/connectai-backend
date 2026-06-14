@@ -14,7 +14,11 @@ import {
   postMfaSetup,
   refresh,
 } from './auth.controller'
-import { loginBodySchema, mfaCodeSchema, refreshBodySchema } from './auth.schema'
+import {
+  loginBodySchema,
+  mfaCodeSchema,
+  refreshBodySchema,
+} from './auth.schema'
 
 export async function authRoutes(app: FastifyInstance) {
   app.setValidatorCompiler(validatorCompiler)

@@ -59,13 +59,19 @@ export async function revokeRefreshTokenById(
 ) {
   return prisma.refreshToken.update({
     where: { id },
-    data: { revokedAt: new Date(), replacedByTokenId: replacedByTokenId ?? null },
+    data: {
+      revokedAt: new Date(),
+      replacedByTokenId: replacedByTokenId ?? null,
+    },
   })
 }
 
 // Revoga um refresh pelo hash, restrito ao dono (logout). updateMany torna a
 // operação idempotente (0 linhas se já revogado / inexistente).
-export async function revokeRefreshTokenByHash(tokenHash: string, userId: string) {
+export async function revokeRefreshTokenByHash(
+  tokenHash: string,
+  userId: string,
+) {
   return prisma.refreshToken.updateMany({
     where: { tokenHash, userId, revokedAt: null },
     data: { revokedAt: new Date() },

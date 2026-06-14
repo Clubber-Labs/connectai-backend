@@ -48,7 +48,10 @@ export async function refresh(request: FastifyRequest, reply: FastifyReply) {
   const { userId, previousTokenId } = await rotateRefreshToken(presented)
   const session = await issueSession(reply, userId, sessionMeta(request))
   await markRefreshTokenRotated(previousTokenId, session.refreshTokenId)
-  return reply.send({ token: session.token, refreshToken: session.refreshToken })
+  return reply.send({
+    token: session.token,
+    refreshToken: session.refreshToken,
+  })
 }
 
 // Logout: revoga o refresh apresentado (a sessão atual). Idempotente.

@@ -39,7 +39,9 @@ export async function issueSession(
 ) {
   const token = await reply.jwtSign({ sub: userId })
   const refreshToken = randomBytes(32).toString('base64url')
-  const expiresAt = new Date(Date.now() + durationToMs(env.REFRESH_TOKEN_EXPIRES_IN))
+  const expiresAt = new Date(
+    Date.now() + durationToMs(env.REFRESH_TOKEN_EXPIRES_IN),
+  )
   const record = await createRefreshToken({
     userId,
     tokenHash: hashRefreshToken(refreshToken),
