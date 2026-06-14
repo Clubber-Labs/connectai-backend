@@ -285,6 +285,7 @@ export async function makeSubscription(
     currentPeriodEnd?: Date
     cancelAtPeriodEnd?: boolean
     canceledAt?: Date | null
+    defaultPaymentMethodId?: string | null
     lastSyncedAt?: Date
   } = {},
 ) {
@@ -304,6 +305,7 @@ export async function makeSubscription(
       currentPeriodEnd: periodEnd,
       cancelAtPeriodEnd: overrides.cancelAtPeriodEnd ?? false,
       canceledAt: overrides.canceledAt ?? null,
+      defaultPaymentMethodId: overrides.defaultPaymentMethodId ?? null,
       lastSyncedAt: overrides.lastSyncedAt ?? now,
     },
   })
@@ -385,6 +387,16 @@ export async function makeMessage(
 export async function makeBlock(blockerId: string, blockedId: string) {
   return testPrisma.block.create({
     data: { blockerId, blockedId },
+  })
+}
+
+export async function makeAnalyticsMetric(
+  eventId: string,
+  type: 'VIEW' | 'SHARE',
+  occurredAt: Date,
+) {
+  return testPrisma.eventAnalyticsMetric.create({
+    data: { eventId, type, occurredAt },
   })
 }
 

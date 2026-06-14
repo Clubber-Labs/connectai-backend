@@ -8,6 +8,7 @@ import {
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod'
 import { registerAuthDecorators } from '../lib/auth-decorators'
+import { env } from '../lib/env'
 import { errorHandler } from '../lib/error-handler'
 import { redis } from '../lib/redis'
 import { genReqId } from '../lib/request-id'
@@ -52,10 +53,12 @@ export function buildApp() {
   app.register(requestIdPlugin)
   app.register(metricsPlugin)
 
-  app.register(fastifyRateLimit, {
-    global: false,
-    redis: redis ?? undefined,
-  })
+  if (env.RATE_LIMIT_ENABLED) {
+    app.register(fastifyRateLimit, {
+      global: false,
+      redis: redis ?? undefined,
+    })
+  }
 
   app.register(fastifyMultipart, { limits: { fileSize: 5 * 1024 * 1024 } })
 
