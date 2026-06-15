@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client'
 import { env } from '../../lib/env'
+import { resolveEndDate } from '../../lib/event-lifecycle'
 import { logger } from '../../lib/logger'
 import { prisma } from '../../lib/prisma'
 import { realtime } from '../../lib/realtime'
@@ -56,10 +57,7 @@ export async function runPromotedDigest(
       },
       select: { id: true, title: true, date: true, endDate: true },
     })
-    const alive = promoted.filter((e) => {
-      const end = e.endDate ?? new Date(e.date.getTime() + 4 * 3600_000)
-      return end.getTime() > now.getTime()
-    })
+    const alive = promoted.filter((e) => resolveEndDate(e.date, e.endDate).getTime() > now.getTime())
     if (alive.length === 0) return { notified: 0 }
 
     const titleByEvent = new Map(alive.map((e) => [e.id, e.title]))
