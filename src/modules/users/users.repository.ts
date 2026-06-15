@@ -240,46 +240,39 @@ export async function clearStaleUserLocations(cutoff: Date) {
 /**
  * Atualiza o usuário e substitui suas preferências (categoria e/ou subcategoria)
  * numa única transação. Semântica PUT: cada lista enviada vira o estado completo
- * daquele nível; nível ausente (undefined) é preservado. O update do usuário é a
- * ÚLTIMA operação para que seu select leia o estado já substituído
- * (read-after-write dentro da transação).
+ * daquele nível; nível ausente (undefined) é preservado. Transação interativa: o
+ * update do usuário roda por ÚLTIMO, então seu select já lê o estado substituído
+ * (read-after-write), e o tipo de retorno é preservado sem cast.
  */
 export async function updateUserWithPreferences(
   id: string,
   data: Prisma.UserUpdateInput,
   prefs: { categories?: EventCategory[]; subcategories?: string[] },
 ) {
-  const ops: Prisma.PrismaPromise<unknown>[] = []
-  if (prefs.categories !== undefined) {
-    ops.push(
-      prisma.userCategoryPreference.deleteMany({ where: { userId: id } }),
-      prisma.userCategoryPreference.createMany({
+  return prisma.$transaction(async (tx) => {
+    if (prefs.categories !== undefined) {
+      await tx.userCategoryPreference.deleteMany({ where: { userId: id } })
+      await tx.userCategoryPreference.createMany({
         data: prefs.categories.map((category) => ({ userId: id, category })),
         skipDuplicates: true,
-      }),
-    )
-  }
-  if (prefs.subcategories !== undefined) {
-    ops.push(
-      prisma.userSubcategoryPreference.deleteMany({ where: { userId: id } }),
-      prisma.userSubcategoryPreference.createMany({
+      })
+    }
+    if (prefs.subcategories !== undefined) {
+      await tx.userSubcategoryPreference.deleteMany({ where: { userId: id } })
+      await tx.userSubcategoryPreference.createMany({
         data: prefs.subcategories.map((subcategory) => ({
           userId: id,
           subcategory,
         })),
         skipDuplicates: true,
-      }),
-    )
-  }
-  ops.push(
-    prisma.user.update({
+      })
+    }
+    return tx.user.update({
       where: { id },
       data,
       select: userPrivateProfileSelect,
-    }),
-  )
-  const results = await prisma.$transaction(ops)
-  return results[results.length - 1] as Awaited<ReturnType<typeof updateUser>>
+    })
+  })
 }
 
 /**

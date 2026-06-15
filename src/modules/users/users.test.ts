@@ -550,6 +550,21 @@ describe('preferredSubcategories no perfil', () => {
     expect(res.json().preferredCategories).toEqual(['GASTRONOMY'])
   })
 
+  it('GET /users/:id expõe as subcategorias de terceiros', async () => {
+    const owner = await makeUser()
+    await makeUserSubcategoryPreference(owner.id, 'GASTRONOMY_PIZZA')
+    const viewer = await makeUser()
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/users/${owner.id}`,
+      headers: { authorization: `Bearer ${token(app, viewer.id)}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().preferredSubcategories).toContain('GASTRONOMY_PIZZA')
+  })
+
   it('PUT com array vazio limpa as subcategorias', async () => {
     const user = await makeUser()
     await makeUserSubcategoryPreference(user.id, 'GENRE_ROCK')
