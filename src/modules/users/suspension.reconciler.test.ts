@@ -15,28 +15,17 @@ afterAll(async () => {
 const past = () => new Date(Date.now() - 60_000)
 const future = () => new Date(Date.now() + 86_400_000)
 
-// A factory não expõe os campos de moderação — setamos direto após criar.
-async function makeSuspended(suspendedUntil: Date) {
-  const user = await makeUser()
-  await testPrisma.user.update({
-    where: { id: user.id },
-    data: {
-      accountStatus: 'SUSPENDED',
-      suspendedAt: new Date(Date.now() - 7 * 86_400_000),
-      suspendedUntil,
-      suspensionReason: 'teste',
-    },
+function makeSuspended(suspendedUntil: Date) {
+  return makeUser({
+    accountStatus: 'SUSPENDED',
+    suspendedAt: new Date(Date.now() - 7 * 86_400_000),
+    suspendedUntil,
+    suspensionReason: 'teste',
   })
-  return user
 }
 
-async function makeBanned() {
-  const user = await makeUser()
-  await testPrisma.user.update({
-    where: { id: user.id },
-    data: { accountStatus: 'BANNED', suspendedUntil: null },
-  })
-  return user
+function makeBanned() {
+  return makeUser({ accountStatus: 'BANNED', suspendedUntil: null })
 }
 
 async function statusOf(id: string) {
@@ -89,11 +78,7 @@ describe('reconcileSuspensions', () => {
 
   it('ignora conta ACTIVE mesmo com suspendedUntil no passado', async () => {
     // Estado defensivo: o WHERE filtra por accountStatus SUSPENDED, não pela data.
-    const user = await makeUser()
-    await testPrisma.user.update({
-      where: { id: user.id },
-      data: { suspendedUntil: past() },
-    })
+    const user = await makeUser({ suspendedUntil: past() })
 
     const result = await reconcileSuspensions()
 

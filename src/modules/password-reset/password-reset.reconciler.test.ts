@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from 'vitest'
-import { makeUser } from '../../test/factories'
+import { makePasswordResetCode, makeUser } from '../../test/factories'
 import { testPrisma } from '../../test/prisma'
 import { describeReconcilerTimer } from '../../test/reconciler-lifecycle'
 import {
@@ -12,23 +12,8 @@ afterAll(async () => {
   await testPrisma.$disconnect()
 })
 
-const future = () => new Date(Date.now() + 60_000)
 const past = () => new Date(Date.now() - 60_000)
-
-// Não há factory para PasswordResetCode — criamos direto (schema simples).
-async function makeCode(
-  userId: string,
-  overrides: { codeHash?: string; expiresAt?: Date; usedAt?: Date | null } = {},
-) {
-  return testPrisma.passwordResetCode.create({
-    data: {
-      userId,
-      codeHash: overrides.codeHash ?? 'hash',
-      expiresAt: overrides.expiresAt ?? future(),
-      usedAt: overrides.usedAt ?? null,
-    },
-  })
-}
+const makeCode = makePasswordResetCode
 
 describe('reconcilePasswordResetCodes', () => {
   it('apaga só os códigos usados quando nenhum venceu', async () => {
@@ -75,8 +60,8 @@ describe('reconcilePasswordResetCodes', () => {
 
   it('respeita o now injetado para decidir o que expirou', async () => {
     const user = await makeUser()
-    // Expira daqui a 1min; com um now 2min à frente, já conta como vencido.
-    await makeCode(user.id, { codeHash: 'curto', expiresAt: future() })
+    // Default da factory expira daqui a 1min; com um now 2min à frente, já vence.
+    await makeCode(user.id, { codeHash: 'curto' })
 
     const { deleted } = await reconcilePasswordResetCodes(
       new Date(Date.now() + 2 * 60_000),
@@ -85,7 +70,7 @@ describe('reconcilePasswordResetCodes', () => {
     expect(deleted).toBe(1)
   })
 
-  it('não toca nos códigos de outro usuário', async () => {
+  it('preserva código válido enquanto apaga um usado de outro usuário', async () => {
     const u1 = await makeUser()
     const u2 = await makeUser()
     await makeCode(u1.id, { codeHash: 'usado', usedAt: past() })

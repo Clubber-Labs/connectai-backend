@@ -20,7 +20,10 @@ export function describeReconcilerTimer(
 
   describe(`${name} — gerência de timer`, () => {
     afterEach(() => {
-      stop() // libera o singleton do módulo entre os testes
+      // Libera o singleton (timer = null) entre os testes. A guarda interna
+      // contra ticks sobrepostos não precisa de reset aqui: o setInterval é
+      // mockado e o callback nunca dispara, então ela nunca é ativada.
+      stop()
       vi.restoreAllMocks()
     })
 
