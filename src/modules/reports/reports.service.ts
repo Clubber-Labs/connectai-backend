@@ -13,11 +13,13 @@ import { deleteComment } from '../comments/comments.repository'
 import { resolveCommentEventId } from '../comments/comments.service'
 import { ensureEventAccess } from '../event-invites/event-invites.access'
 import { deleteEvent, findEventImageKeys } from '../events/events.repository'
+import { deletePost, findPostImageKeys } from '../posts/posts.repository'
 import { banUser, suspendUser, unsuspendUser } from '../users/users.service'
 import {
   createCommentReport,
   createEventReport,
   createMessageReport,
+  createPostReport,
   createUserReport,
   deleteReportById,
   findActiveConversationParticipant,
@@ -25,9 +27,11 @@ import {
   findExistingCommentReport,
   findExistingEventReport,
   findExistingMessageReport,
+  findExistingPostReport,
   findExistingUserReport,
   findMessageById,
   findReportById,
+  findReportPostById,
   findReports,
   findReportTargetUserById,
   findUserRoleById,
@@ -104,6 +108,36 @@ export async function reportComment(
   }
 
   return createCommentReport(data, reporterId, commentId)
+}
+
+export async function reportPost(
+  data: CreateReportBody,
+  reporterId: string,
+  postId: string,
+) {
+  const post = await findReportPostById(postId)
+  if (!post) {
+    throw { statusCode: 404, message: 'Post não encontrado' }
+  }
+
+  await ensureEventAccess(post.eventId, reporterId)
+
+  if (post.authorId === reporterId) {
+    throw {
+      statusCode: 400,
+      message: 'Não é possível denunciar o próprio conteúdo',
+    }
+  }
+
+  const existing = await findExistingPostReport(reporterId, postId)
+  if (existing) {
+    throw {
+      statusCode: 409,
+      message: 'Você já possui uma denúncia ativa para esta publicação',
+    }
+  }
+
+  return createPostReport(data, reporterId, postId)
 }
 
 export async function reportMessage(
@@ -219,6 +253,12 @@ async function removeReportedComment(commentId: string) {
   await cache.invalidate('events:public:*')
 }
 
+async function removeReportedPost(postId: string) {
+  const images = await findPostImageKeys(postId)
+  await Promise.all(images.map((img) => deleteUploaded(img.key, logger)))
+  await deletePost(postId)
+}
+
 async function removeReportedMessage(messageId: string) {
   const message = await findMessageById(messageId)
   if (!message) {
@@ -251,7 +291,8 @@ export async function removeReportTarget(
     report.status === 'RESOLVED_REMOVED' &&
     !report.eventId &&
     !report.commentId &&
-    !report.messageId
+    !report.messageId &&
+    !report.postId
   ) {
     return report
   }
@@ -264,7 +305,12 @@ export async function removeReportTarget(
     }
   }
 
-  if (!report.eventId && !report.commentId && !report.messageId) {
+  if (
+    !report.eventId &&
+    !report.commentId &&
+    !report.messageId &&
+    !report.postId
+  ) {
     throw {
       statusCode: 409,
       message: 'O conteúdo denunciado já não está disponível',
@@ -285,6 +331,8 @@ export async function removeReportTarget(
     await removeReportedComment(report.commentId)
   } else if (report.messageId) {
     await removeReportedMessage(report.messageId)
+  } else if (report.postId) {
+    await removeReportedPost(report.postId)
   }
 
   // Re-fetch para refletir as FKs nulas após cascade SetNull da deleção de conteúdo
