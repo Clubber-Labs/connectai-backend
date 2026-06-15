@@ -26,7 +26,9 @@ import {
   createCheckoutSession,
   createSetupIntent,
   createSubscriptionIntent,
+  getPlan,
   getSubscription,
+  resetPlanPriceCache,
   resumeSubscription,
   terminateBillingForUser,
 } from './billing.service'
@@ -46,6 +48,7 @@ vi.mock('../../lib/stripe', () => ({
       del: vi.fn(),
     },
     checkout: { sessions: { create: vi.fn() } },
+    prices: { retrieve: vi.fn() },
     subscriptions: { create: vi.fn(), update: vi.fn(), retrieve: vi.fn() },
     setupIntents: { create: vi.fn() },
     ephemeralKeys: { create: vi.fn() },
@@ -1043,6 +1046,113 @@ describe('service', () => {
     })
   })
 
+  describe('getPlan', () => {
+    // biome-ignore lint/suspicious/noExplicitAny: mock parcial do Stripe
+    function mockPriceRetrieve(overrides: Record<string, any> = {}) {
+      vi.mocked(stripe.prices.retrieve).mockResolvedValue({
+        id: 'price_premium',
+        unit_amount: 1990,
+        currency: 'brl',
+        recurring: { interval: 'month', interval_count: 1 },
+        ...overrides,
+        // biome-ignore lint/suspicious/noExplicitAny: mock parcial do Stripe
+      } as any)
+    }
+
+    beforeEach(() => {
+      // Cache é escopo de módulo e vaza entre testes — zera antes de cada um.
+      resetPlanPriceCache()
+    })
+
+    it('retorna preço do Stripe + trialDays + trialEligible (contrato)', async () => {
+      const user = await makeUser()
+      mockPriceRetrieve()
+
+      const result = await getPlan(user.id)
+
+      expect(result).toEqual({
+        amount: 1990,
+        currency: 'brl',
+        interval: 'month',
+        intervalCount: 1,
+        trialDays: 7,
+        trialEligible: true,
+      })
+      expect(stripe.prices.retrieve).toHaveBeenCalledWith(
+        expect.stringContaining('price_'),
+      )
+    })
+
+    it('trialEligible=false quando user já teve assinatura real (com cartão)', async () => {
+      const user = await makeUser()
+      await makeSubscription(user.id, {
+        status: 'CANCELED',
+        defaultPaymentMethodId: 'pm_test',
+      })
+      mockPriceRetrieve()
+
+      const result = await getPlan(user.id)
+
+      expect(result.trialEligible).toBe(false)
+    })
+
+    it('trialEligible=true quando a única anterior é trial órfão (sem cartão)', async () => {
+      const user = await makeUser()
+      await makeSubscription(user.id, {
+        status: 'CANCELED',
+        defaultPaymentMethodId: null,
+      })
+      mockPriceRetrieve()
+
+      const result = await getPlan(user.id)
+
+      expect(result.trialEligible).toBe(true)
+    })
+
+    it('cacheia o preço: chamadas repetidas batem no Stripe só uma vez', async () => {
+      const userA = await makeUser()
+      const userB = await makeUser()
+      mockPriceRetrieve()
+
+      await getPlan(userA.id)
+      await getPlan(userB.id)
+
+      expect(stripe.prices.retrieve).toHaveBeenCalledTimes(1)
+    })
+
+    it('lança 500 quando o price não é recorrente (recurring null)', async () => {
+      const user = await makeUser()
+      mockPriceRetrieve({ recurring: null })
+
+      await expect(getPlan(user.id)).rejects.toMatchObject({
+        statusCode: 500,
+      })
+    })
+
+    it('lança 500 quando o price não tem unit_amount', async () => {
+      const user = await makeUser()
+      mockPriceRetrieve({ unit_amount: null })
+
+      await expect(getPlan(user.id)).rejects.toMatchObject({
+        statusCode: 500,
+      })
+    })
+
+    it('mapeia erro de rede do Stripe pra 502', async () => {
+      const user = await makeUser()
+      vi.mocked(stripe.prices.retrieve).mockRejectedValue(
+        new Stripe.errors.StripeConnectionError({
+          message: 'socket hang up',
+          // biome-ignore lint/suspicious/noExplicitAny: construtor raw do SDK
+        } as any),
+      )
+
+      await expect(getPlan(user.id)).rejects.toMatchObject({
+        statusCode: 502,
+      })
+    })
+  })
+
   describe('cancelSubscription', () => {
     it('chama Stripe com cancel_at_period_end=true e atualiza local', async () => {
       const user = await makeUser()
@@ -1686,6 +1796,91 @@ describe('routes E2E', () => {
       expect(res.statusCode).toBe(201)
       expect(res.json()).toEqual({
         url: 'https://checkout.stripe.com/test_e2e',
+      })
+    })
+
+    it('GET /billing/subscription mantém paridade total dos campos (schema de response)', async () => {
+      // Schema de response formaliza o contrato SEM remover campos — o output
+      // deve continuar com a linha inteira (datas serializadas como ISO string).
+      const user = await makeUser()
+      const sub = await makeSubscription(user.id, {
+        status: 'ACTIVE',
+        defaultPaymentMethodId: 'pm_keep',
+      })
+
+      const token = app.jwt.sign({ sub: user.id })
+      const res = await app.inject({
+        method: 'GET',
+        url: '/billing/subscription',
+        headers: { authorization: `Bearer ${token}` },
+      })
+
+      expect(res.statusCode).toBe(200)
+      const body = res.json()
+      // Todos os campos da linha presentes (paridade total, nada stripado).
+      expect(body).toMatchObject({
+        id: sub.id,
+        userId: user.id,
+        stripeSubscriptionId: sub.stripeSubscriptionId,
+        stripePriceId: sub.stripePriceId,
+        status: 'ACTIVE',
+        cancelAtPeriodEnd: false,
+        defaultPaymentMethodId: 'pm_keep',
+      })
+      expect(Object.keys(body).sort()).toEqual(
+        [
+          'cancelAtPeriodEnd',
+          'canceledAt',
+          'createdAt',
+          'currentPeriodEnd',
+          'currentPeriodStart',
+          'defaultPaymentMethodId',
+          'id',
+          'lastSyncedAt',
+          'startedAt',
+          'status',
+          'stripePriceId',
+          'stripeSubscriptionId',
+          'trialEndsAt',
+          'updatedAt',
+          'userId',
+        ].sort(),
+      )
+      // Datas serializadas como ISO string no JSON.
+      expect(typeof body.currentPeriodEnd).toBe('string')
+    })
+
+    it('GET /billing/plan retorna 401 sem token', async () => {
+      const res = await app.inject({ method: 'GET', url: '/billing/plan' })
+      expect(res.statusCode).toBe(401)
+    })
+
+    it('GET /billing/plan retorna 200 com o contrato do plano', async () => {
+      resetPlanPriceCache()
+      const user = await makeUser()
+      vi.mocked(stripe.prices.retrieve).mockResolvedValue({
+        id: 'price_premium',
+        unit_amount: 1990,
+        currency: 'brl',
+        recurring: { interval: 'month', interval_count: 1 },
+        // biome-ignore lint/suspicious/noExplicitAny: mock parcial do Stripe
+      } as any)
+
+      const token = app.jwt.sign({ sub: user.id })
+      const res = await app.inject({
+        method: 'GET',
+        url: '/billing/plan',
+        headers: { authorization: `Bearer ${token}` },
+      })
+
+      expect(res.statusCode).toBe(200)
+      expect(res.json()).toEqual({
+        amount: 1990,
+        currency: 'brl',
+        interval: 'month',
+        intervalCount: 1,
+        trialDays: 7,
+        trialEligible: true,
       })
     })
   })
