@@ -226,7 +226,9 @@ describe('POST /events/:eventId/posts/:postId/images', () => {
     expect(res.statusCode).toBe(201)
     expect(res.json()).toMatchObject({ format: 'webp', order: 0 })
     expect(res.json()).not.toHaveProperty('key')
-    expect(fakeStorage.uploads.at(-1)?.key).toContain(`posts/${post.id}/`)
+    expect(fakeStorage.uploads[fakeStorage.uploads.length - 1]?.key).toContain(
+      `posts/${post.id}/`,
+    )
 
     const list = await app.inject({
       method: 'GET',
