@@ -197,6 +197,7 @@ enum EventCategory {
   SPORTS
   TECH
   GASTRONOMY
+  CAFE
   ART
   EDUCATION
   NIGHTLIFE
@@ -205,7 +206,11 @@ enum EventCategory {
   OUTDOORS
   GAMING
   FILM_THEATER
+  COMEDY
   FASHION
+  MARKETS
+  // RELIGION mantida como valor legado (dado existente) — NÃO selecionável:
+  // removida das categorias disponíveis (SELECTABLE_CATEGORIES no app).
   RELIGION
   FAMILY
   PETS

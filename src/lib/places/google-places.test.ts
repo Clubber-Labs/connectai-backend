@@ -170,7 +170,7 @@ describe('GooglePlacesService.searchText', () => {
     })
 
     expect(place.placeId).toBe('t1')
-    expect(place.category).toBe('PARTY') // bar → PARTY no mapa reverso
+    expect(place.category).toBe('NIGHTLIFE') // bar → NIGHTLIFE no mapa reverso
     expect(place.rating).toBe(4.4)
     expect(place.openNow).toBe(true)
     expect(place.distanceMeters).toBeGreaterThan(1200)

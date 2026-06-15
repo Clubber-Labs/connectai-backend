@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { eventCategorySchema } from '../../lib/event-categories'
+import { selectableCategorySchema } from '../../lib/event-categories'
 import { EVENT_STATUSES } from '../../lib/event-lifecycle'
 import { recurrenceSchema } from '../recurring-events/recurring-events.schema'
 
@@ -36,12 +36,12 @@ export const categoryFilter = z
     const unique = Array.from(new Set(list))
     return unique.length > 0 ? unique : undefined
   })
-  .pipe(z.array(eventCategorySchema).optional())
+  .pipe(z.array(selectableCategorySchema).optional())
 
 // Categorias que o evento POSSUI (mín. 1, sem duplicatas). Distinto do
 // categoryFilter acima, que é o filtro de busca por categoria na listagem.
 export const eventCategoriesInput = z
-  .array(eventCategorySchema)
+  .array(selectableCategorySchema)
   .min(1, 'Informe ao menos uma categoria')
   .max(5, 'Máximo de 5 categorias')
   .transform((list) => Array.from(new Set(list)))
