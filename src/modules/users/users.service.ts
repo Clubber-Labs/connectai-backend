@@ -355,7 +355,11 @@ export async function changeUserAvatar(
 
 type ModerationTarget = Awaited<ReturnType<typeof findModerationState>>
 
-function assertModeratable(target: ModerationTarget, requesterId: string) {
+function assertModeratable(
+  target: ModerationTarget,
+  requesterId: string,
+  nextAction: 'SUSPEND' | 'BAN',
+) {
   if (!target) throw { statusCode: 404, message: 'Usuário não encontrado' }
   if (target.id === requesterId) {
     throw { statusCode: 400, message: 'Não é possível moderar a própria conta' }
@@ -364,6 +368,15 @@ function assertModeratable(target: ModerationTarget, requesterId: string) {
     throw {
       statusCode: 403,
       message: 'Não é possível moderar um administrador',
+    }
+  }
+  // Banimento é permanente: suspender (temporário) por cima rebaixaria a punição
+  // e o reconciler reativaria a conta ao vencer. Exige remover o ban antes.
+  if (nextAction === 'SUSPEND' && target.accountStatus === 'BANNED') {
+    throw {
+      statusCode: 409,
+      message:
+        'Usuário já está banido permanentemente — remova o banimento antes de suspender',
     }
   }
 }
@@ -375,7 +388,7 @@ export async function suspendUser(
   reason?: string,
 ) {
   const target = await findModerationState(userId)
-  assertModeratable(target, requesterId)
+  assertModeratable(target, requesterId, 'SUSPEND')
   const suspendedUntil = new Date(Date.now() + days * 24 * 60 * 60 * 1000)
   const updated = await setUserSuspended(userId, suspendedUntil, reason)
   await moderationDenylist.block(userId)
@@ -388,7 +401,7 @@ export async function banUser(
   reason?: string,
 ) {
   const target = await findModerationState(userId)
-  assertModeratable(target, requesterId)
+  assertModeratable(target, requesterId, 'BAN')
   const updated = await setUserBanned(userId, reason)
   await moderationDenylist.block(userId)
   return updated

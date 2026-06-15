@@ -918,6 +918,40 @@ describe('POST /reports/:id/moderate-user', () => {
     expect(res.statusCode).toBe(400)
   })
 
+  it('409 ao suspender quem já está banido (não rebaixa o ban)', async () => {
+    const admin = await makeUser({ role: 'ADMIN' })
+    const reporter = await makeUser()
+    const target = await makeUser()
+    const banReport = await makeReport(reporter.id, { targetUserId: target.id })
+    const suspendReport = await makeReport(reporter.id, {
+      targetUserId: target.id,
+    })
+
+    const ban = await app.inject({
+      method: 'POST',
+      url: `/reports/${banReport.id}/moderate-user`,
+      headers: { authorization: `Bearer ${token(app, admin.id)}` },
+      body: { action: 'BAN', reason: 'reincidência' },
+    })
+    expect(ban.statusCode).toBe(200)
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/reports/${suspendReport.id}/moderate-user`,
+      headers: { authorization: `Bearer ${token(app, admin.id)}` },
+      body: { action: 'SUSPEND', days: 1 },
+    })
+    expect(res.statusCode).toBe(409)
+
+    // O banimento permanente é preservado (sem suspendedUntil).
+    const stored = await testPrisma.user.findUnique({
+      where: { id: target.id },
+      select: { accountStatus: true, suspendedUntil: true },
+    })
+    expect(stored?.accountStatus).toBe('BANNED')
+    expect(stored?.suspendedUntil).toBeNull()
+  })
+
   it('400 quando a denúncia não é sobre usuário', async () => {
     const admin = await makeUser({ role: 'ADMIN' })
     const author = await makeUser()

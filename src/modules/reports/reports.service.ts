@@ -376,13 +376,8 @@ export async function moderateReportedUser(
   }
 
   if (body.action === 'SUSPEND') {
-    // O schema garante days definido quando action=SUSPEND.
-    await suspendUser(
-      report.targetUserId,
-      requesterId,
-      body.days as number,
-      body.reason,
-    )
+    // União discriminada: neste branch `body.days` é number (sem cast).
+    await suspendUser(report.targetUserId, requesterId, body.days, body.reason)
   } else {
     await banUser(report.targetUserId, requesterId, body.reason)
   }

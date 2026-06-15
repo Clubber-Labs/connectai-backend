@@ -3,7 +3,6 @@ import { Prisma, type SocialProvider } from '@prisma/client'
 import { unblock } from '../../lib/moderation-denylist'
 import {
   clearExpiredSuspension,
-  findModerationState,
   findOwnUserById,
   findUserByEmail,
   findUserByUsername,
@@ -73,16 +72,15 @@ async function loadUserAndDecorate(userId: string) {
     throw { statusCode: 401, message: 'Sessão inválida' }
   }
   // Moderação: conta punida não loga (sessão existente é barrada na denylist do
-  // authenticate). suspendedUntil só é buscado no caso raro de estar SUSPENDED.
+  // authenticate). suspendedUntil vem no próprio select privado (sem 2ª query).
   if (user.accountStatus === 'BANNED') {
     throw { statusCode: 403, message: 'Esta conta foi banida permanentemente.' }
   }
   if (user.accountStatus === 'SUSPENDED') {
-    const state = await findModerationState(user.id)
-    if (state?.suspendedUntil && state.suspendedUntil > new Date()) {
+    if (user.suspendedUntil && user.suspendedUntil > new Date()) {
       throw {
         statusCode: 403,
-        message: `Esta conta está suspensa até ${state.suspendedUntil.toISOString()}.`,
+        message: `Esta conta está suspensa até ${user.suspendedUntil.toISOString()}.`,
       }
     }
     const res = await clearExpiredSuspension(user.id, new Date())

@@ -37,6 +37,9 @@ const userPrivateProfileSelect = {
   accountStatus: true,
   deactivatedAt: true,
   scheduledDeletionAt: true,
+  // Fim da suspensão (null em BANNED/ACTIVE) — o mobile mostra a data limite ao
+  // próprio usuário e o login social lê daqui sem uma 2ª query.
+  suspendedUntil: true,
   // Status do MFA (sem expor o segredo nem os códigos) — o cliente usa pra
   // mostrar "MFA ativo" e gates de UI.
   mfaEnabled: true,

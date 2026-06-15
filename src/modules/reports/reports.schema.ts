@@ -40,16 +40,19 @@ export const resolveReportSchema = z.object({
 
 // Ação de moderação sobre o usuário denunciado (POST /reports/:id/moderate-user).
 // SUSPEND exige `days` (prazo da suspensão temporária); BAN é permanente.
-export const moderateUserSchema = z
-  .object({
-    action: z.enum(['SUSPEND', 'BAN']),
-    days: z.number().int().min(1).max(3650).optional(),
+// União discriminada por `action`: SUSPEND exige `days`, BAN não tem `days`.
+// Diferente de `.refine()`, isto estreita o tipo no service (sem `as number`).
+export const moderateUserSchema = z.discriminatedUnion('action', [
+  z.object({
+    action: z.literal('SUSPEND'),
+    days: z.number().int().min(1).max(3650),
     reason: z.string().max(1000).optional(),
-  })
-  .refine((v) => v.action !== 'SUSPEND' || v.days !== undefined, {
-    message: 'days é obrigatório para action=SUSPEND',
-    path: ['days'],
-  })
+  }),
+  z.object({
+    action: z.literal('BAN'),
+    reason: z.string().max(1000).optional(),
+  }),
+])
 
 export const listReportsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),

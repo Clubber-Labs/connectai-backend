@@ -55,12 +55,14 @@ export async function rebuildFromDb(): Promise<number> {
       where: { accountStatus: { in: ['SUSPENDED', 'BANNED'] } },
       select: { id: true },
     })
-    const pipeline = redis.pipeline()
-    pipeline.del(KEY)
+    // MULTI/EXEC (atômico): del + sadd na mesma transação, sem janela em que o
+    // SET fica vazio e um ban escaparia entre os dois comandos no boot.
+    const multi = redis.multi()
+    multi.del(KEY)
     if (punished.length > 0) {
-      pipeline.sadd(KEY, ...punished.map((u) => u.id))
+      multi.sadd(KEY, ...punished.map((u) => u.id))
     }
-    await pipeline.exec()
+    await multi.exec()
     return punished.length
   } catch (err) {
     logErr('rebuildFromDb', err)
