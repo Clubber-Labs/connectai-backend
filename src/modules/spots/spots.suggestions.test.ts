@@ -133,6 +133,7 @@ describe('POST /spots/suggestions', () => {
 
     const res = await suggest(user.id)
     expect(res.statusCode).toBe(400)
+    expect(res.json().code).toBe('SPOT_NO_PREFERENCES')
 
     const usage = await testPrisma.spotGenerationUsage.findMany({
       where: { userId: user.id },
@@ -146,6 +147,7 @@ describe('POST /spots/suggestions', () => {
 
     const res = await suggest(user.id)
     expect(res.statusCode).toBe(400)
+    expect(res.json().code).toBe('SPOT_PREFERENCES_NO_PLACES')
     expect(fakePlaces.calls).toBe(0)
 
     const usage = await testPrisma.spotGenerationUsage.findMany({
@@ -190,6 +192,7 @@ describe('POST /spots/suggestions', () => {
     })
 
     expect(res.statusCode).toBe(400)
+    expect(res.json().code).toBe('SPOT_RADIUS_TOO_LARGE')
     expect(fakePlaces.calls).toBe(0)
   })
 
@@ -355,6 +358,7 @@ describe('PATCH /users/me/spot-prefs', () => {
     })
 
     expect(res.statusCode).toBe(400)
+    expect(res.json().code).toBe('SPOT_RADIUS_TOO_LARGE')
   })
 
   it('retorna 401 sem autenticação', async () => {

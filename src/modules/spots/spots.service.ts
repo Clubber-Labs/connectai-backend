@@ -292,7 +292,11 @@ export async function generateSuggestions(
   let radiusKm: number
   if (body.radiusKm !== undefined) {
     if (body.radiusKm > maxKm) {
-      throw { statusCode: 400, message: `Raio máximo permitido: ${maxKm}km` }
+      throw {
+        statusCode: 400,
+        message: `Raio máximo permitido: ${maxKm}km`,
+        code: 'SPOT_RADIUS_TOO_LARGE',
+      }
     }
     radiusKm = body.radiusKm
   } else {
@@ -310,6 +314,7 @@ export async function generateSuggestions(
       throw {
         statusCode: 400,
         message: 'Configure suas preferências de rolê para gerar sugestões',
+        code: 'SPOT_NO_PREFERENCES',
       }
     }
     // Nenhuma preferência mapeia para tipo do Places (ex.: só TECH/BUSINESS):
@@ -318,6 +323,7 @@ export async function generateSuggestions(
       throw {
         statusCode: 400,
         message: 'Suas preferências de rolê ainda não têm sugestões de locais',
+        code: 'SPOT_PREFERENCES_NO_PLACES',
       }
     }
     sortedCats = [...categories].sort()
@@ -399,6 +405,7 @@ export async function setSpotRadius(userId: string, radiusKm: number) {
     throw {
       statusCode: 400,
       message: `Raio máximo permitido: ${env.SPOT_MAX_RADIUS_KM}km`,
+      code: 'SPOT_RADIUS_TOO_LARGE',
     }
   }
   return updateSpotRadius(userId, radiusKm)
