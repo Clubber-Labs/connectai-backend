@@ -1,4 +1,5 @@
 import { compare } from 'bcryptjs'
+import { env } from '../../lib/env'
 import {
   buildOtpauthUrl,
   buildQrCodeDataUrl,
@@ -115,24 +116,62 @@ export async function validateLogin(data: LoginBody): Promise<LoginResult> {
 
 // ── Refresh token: rotação, reuso e revogação ────────────────────────────────
 
-// Valida e autoriza a rotação reivindicando o refresh de forma ATÔMICA (revoga
-// no mesmo passo da validação — ver claimRefreshToken). Detecção de reuso: se o
-// token já estava revogado (reapresentação de um token rotacionado), assume
-// comprometimento e revoga TODA a família do usuário, negando a troca.
+// Resultado da rotação. `rotated`: venceu o claim atômico (rotação normal — o
+// controller emite o par novo e encadeia o sucessor). `grace`: reapresentou um
+// token recém-rotacionado dentro da janela de carência (refresh concorrente ou
+// retry de resposta perdida) — o controller só emite um par novo, sem encadear,
+// e a sessão NÃO é derrubada.
+export type RotationResult =
+  | { kind: 'rotated'; userId: string; previousTokenId: string }
+  | { kind: 'grace'; userId: string }
+
+// Defesa em profundidade: conta anonimizada é terminal e não renova sessão —
+// espelha o bloqueio explícito do login (validateLogin). Revoga o que restar.
+async function assertSessionRenewable(userId: string) {
+  const user = await findUserAccountStatus(userId)
+  if (user?.accountStatus === 'ANONYMIZED') {
+    await revokeAllRefreshTokensForUser(userId)
+    throw { statusCode: 401, message: 'Refresh token inválido' }
+  }
+}
+
+// Valida e autoriza a rotação reivindicando o refresh de forma ATÔMICA (revoga no
+// mesmo passo — ver claimRefreshToken).
+//
+// Detecção de reuso COM janela de carência: o app mobile reapresenta o MESMO
+// token o tempo todo de forma benigna — refresh concorrente (várias requisições
+// renovando juntas quando o access expira) ou retry de uma resposta perdida na
+// rede. Derrubar a família a cada reapresentação deslogava o usuário em TODOS os
+// dispositivos a cada ciclo. Com a janela:
+//   • token rotacionado reapresentado DENTRO da janela → benigno → reemite (grace)
+//   • token rotacionado reapresentado FORA da janela → roubo → derruba a família
+//   • revogado sem rotação (logout/reset/MFA) ou expirado → 401, sem derrubar
 export async function rotateRefreshToken(
   rawToken: string,
-): Promise<{ userId: string; previousTokenId: string }> {
+): Promise<RotationResult> {
   const { record, claimed } = await claimRefreshToken(
     hashRefreshToken(rawToken),
   )
   if (!record) {
     throw { statusCode: 401, message: 'Refresh token inválido' }
   }
+
   if (!claimed) {
-    // Não venceu a reivindicação: já estava revogado (reuso) ou expirado/concorrência.
-    if (record.revokedAt) {
+    // Não venceu o claim: token já revogado (reuso/concorrência) ou expirado.
+    // `rotatedAt` (setado só na rotação) separa reuso de roubo de uma revogação
+    // intencional, e a janela separa concorrência benigna de comprometimento.
+    const rotatedRecently =
+      record.rotatedAt != null &&
+      Date.now() - record.rotatedAt.getTime() <=
+        env.REFRESH_TOKEN_REUSE_GRACE_MS
+    if (rotatedRecently) {
+      await assertSessionRenewable(record.userId)
+      return { kind: 'grace', userId: record.userId }
+    }
+    // Reuso de um token rotacionado FORA da janela = comprometimento: derruba a
+    // família inteira. Revogação intencional (rotatedAt nulo) só nega a troca.
+    if (record.rotatedAt) {
       await revokeAllRefreshTokensForUser(record.userId)
-      throw { statusCode: 401, message: 'Refresh token inválido' }
     }
     const expired = record.expiresAt.getTime() <= Date.now()
     throw {
@@ -140,14 +179,9 @@ export async function rotateRefreshToken(
       message: expired ? 'Refresh token expirado' : 'Refresh token inválido',
     }
   }
-  // Defesa em profundidade: conta anonimizada é terminal e não renova sessão —
-  // espelha o bloqueio explícito do login (validateLogin).
-  const user = await findUserAccountStatus(record.userId)
-  if (user?.accountStatus === 'ANONYMIZED') {
-    await revokeAllRefreshTokensForUser(record.userId)
-    throw { statusCode: 401, message: 'Refresh token inválido' }
-  }
-  return { userId: record.userId, previousTokenId: record.id }
+
+  await assertSessionRenewable(record.userId)
+  return { kind: 'rotated', userId: record.userId, previousTokenId: record.id }
 }
 
 // Encadeia o sucessor na cadeia de rotação (o antigo já foi revogado no claim).

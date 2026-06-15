@@ -26,6 +26,20 @@ const baseSchema = z.object({
       "REFRESH_TOKEN_EXPIRES_IN inválido (ex.: '30d', '90d' ou segundos)",
     )
     .default('90d'),
+  // Janela de carência (ms) para reuso de um refresh token recém-rotacionado. O
+  // app mobile reapresenta o MESMO token o tempo todo de forma benigna: refresh
+  // concorrente (várias requisições renovando juntas após o access expirar) ou
+  // retry de uma resposta perdida na rede. Dentro desta janela isso é tratado
+  // como benigno (reemite a sessão) em vez de assumir comprometimento e derrubar
+  // TODAS as sessões. Curta de propósito: FORA dela, reusar um token rotacionado
+  // continua sendo sinal de roubo e dispara a revogação da família. 0 desliga a
+  // carência (volta ao comportamento estrito). Revogação intencional (logout/
+  // reset/MFA) não cria janela — o token morre na hora.
+  REFRESH_TOKEN_REUSE_GRACE_MS: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(30_000),
   // CSV de origens permitidas no CORS (ex.: 'https://app.connectai.app,https://admin...').
   // Em produção é OBRIGATÓRIO definir (sem ele o boot falha) — não refletimos
   // qualquer Origin com credentials em prod. Em dev/test, vazio = reflete a
@@ -401,6 +415,7 @@ export const env = {
   JWT_SECRET: parsed.JWT_SECRET,
   JWT_EXPIRES_IN: parsed.JWT_EXPIRES_IN,
   REFRESH_TOKEN_EXPIRES_IN: parsed.REFRESH_TOKEN_EXPIRES_IN,
+  REFRESH_TOKEN_REUSE_GRACE_MS: parsed.REFRESH_TOKEN_REUSE_GRACE_MS,
   // CSV -> lista limpa, ou `undefined` quando não há origens configuradas.
   // CORS_ALLOWED_ORIGINS="" (string vazia, como no .env.example) precisa cair em
   // `undefined` — não em `[]`. Senão `origin: [] ?? true` no server.ts ficaria

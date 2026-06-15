@@ -164,8 +164,12 @@ model PasswordResetCode {
 
 // Refresh token de sessão longa (rotativo, revogável). Guarda só o HASH do token
 // bruto (SHA-256) — o valor em claro nunca toca o banco. `replacedByTokenId` liga
-// a cadeia de rotação: ao renovar, o antigo é revogado e aponta para o novo;
-// reapresentar um token já revogado dispara revogação de toda a família (reuso).
+// a cadeia de rotação: ao renovar, o antigo é revogado e aponta para o novo.
+// `rotatedAt` (setado atomicamente no claim da rotação) distingue revogação por
+// ROTAÇÃO de revogação intencional (logout/reset/MFA): reapresentar um token
+// rotacionado FORA da janela de carência dispara revogação de toda a família
+// (reuso/comprometimento); dentro da janela é tratado como benigno (refresh
+// concorrente ou retry de resposta perdida) e apenas reemite a sessão.
 model RefreshToken {
   id                String    @id @default(uuid())
   userId            String
@@ -173,6 +177,7 @@ model RefreshToken {
   tokenHash         String    @unique
   expiresAt         DateTime
   revokedAt         DateTime?
+  rotatedAt         DateTime?
   replacedByTokenId String?
   userAgent         String?
   ip                String?

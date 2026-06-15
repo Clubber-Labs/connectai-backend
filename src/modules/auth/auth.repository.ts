@@ -59,16 +59,23 @@ export async function createRefreshToken(data: {
 // revogá-lo numa só passada. O `updateMany` condicional (`revokedAt: null` +
 // não expirado) é a porta atômica — entre N requisições concorrentes com o mesmo
 // token, só UMA recebe `count > 0`. Isso fecha a corrida de "validar e só depois
-// revogar" (duas trocas paralelas gerariam duas famílias válidas). `record`
-// (lido antes do update) serve pra distinguir reuso (já revogado) de expirado.
+// revogar" (duas trocas paralelas gerariam duas famílias válidas). Marca
+// `rotatedAt` no MESMO update: assinatura à prova de corrida de "revogado por
+// ROTAÇÃO" (≠ logout/reset, que não setam) — sem depender do encadeamento do
+// sucessor, que só é gravado depois. Quem perde o claim relê o estado ATUAL (o
+// `record` do find inicial pode estar defasado se outra requisição revogou em
+// paralelo) para classificar reuso/carência/expirado com dado fresco.
 export async function claimRefreshToken(tokenHash: string) {
   const record = await prisma.refreshToken.findUnique({ where: { tokenHash } })
   if (!record) return { record: null, claimed: false }
+  const now = new Date()
   const result = await prisma.refreshToken.updateMany({
-    where: { tokenHash, revokedAt: null, expiresAt: { gt: new Date() } },
-    data: { revokedAt: new Date() },
+    where: { tokenHash, revokedAt: null, expiresAt: { gt: now } },
+    data: { revokedAt: now, rotatedAt: now },
   })
-  return { record, claimed: result.count > 0 }
+  if (result.count > 0) return { record, claimed: true }
+  const current = await prisma.refreshToken.findUnique({ where: { tokenHash } })
+  return { record: current ?? record, claimed: false }
 }
 
 // Encadeia o sucessor na cadeia de rotação (o antigo já foi revogado no claim).
