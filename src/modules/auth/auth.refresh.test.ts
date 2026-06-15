@@ -103,10 +103,44 @@ describe('POST /auth/refresh', () => {
     expect(again.statusCode).toBe(200)
   })
 
-  it('detecção de reuso: reapresentar refresh rotacionado derruba a família', async () => {
+  it('detecção de reuso: reusar refresh rotacionado FORA da janela derruba a família', async () => {
+    const user = await makeUser()
+    // Token rotacionado/revogado há muito tempo (bem além da janela de carência):
+    // reapresentá-lo é sinal de comprometimento, não concorrência benigna.
+    const old = new Date(Date.now() - 3_600_000)
+    const { raw: stale } = await makeRefreshToken(user.id, {
+      revokedAt: old,
+      rotatedAt: old,
+    })
+    // Uma sessão ativa qualquer, para provar que a família inteira cai.
+    const { raw: live } = await makeRefreshToken(user.id)
+
+    const reuse = await app.inject({
+      method: 'POST',
+      url: '/auth/refresh',
+      body: { refreshToken: stale },
+    })
+    expect(reuse.statusCode).toBe(401)
+
+    // A sessão ativa também foi revogada pela defesa contra reuso.
+    const poisoned = await app.inject({
+      method: 'POST',
+      url: '/auth/refresh',
+      body: { refreshToken: live },
+    })
+    expect(poisoned.statusCode).toBe(401)
+
+    const active = await testPrisma.refreshToken.count({
+      where: { userId: user.id, revokedAt: null },
+    })
+    expect(active).toBe(0)
+  })
+
+  it('carência: reapresentar refresh recém-rotacionado reemite sem derrubar a sessão', async () => {
     const user = await makeUser()
     const { refreshToken: first } = await loginTokens(user.email)
 
+    // Rotaciona normalmente: `first` vira um token rotacionado (rotatedAt = agora).
     const rotated = (
       await app.inject({
         method: 'POST',
@@ -115,26 +149,53 @@ describe('POST /auth/refresh', () => {
       })
     ).json() as { refreshToken: string }
 
-    // Reusar o ANTIGO (já rotacionado/revogado) → 401 + revoga tudo.
-    const reuse = await app.inject({
+    // Reapresentar `first` DENTRO da janela (refresh concorrente / retry de
+    // resposta perdida) é benigno: reemite um par novo em vez de derrubar tudo.
+    const grace = await app.inject({
       method: 'POST',
       url: '/auth/refresh',
       body: { refreshToken: first },
     })
-    expect(reuse.statusCode).toBe(401)
+    expect(grace.statusCode).toBe(200)
+    expect(typeof grace.json().refreshToken).toBe('string')
 
-    // O refresh "bom" (rotated) também foi revogado pela defesa.
-    const poisoned = await app.inject({
+    // A sessão emitida na rotação continua válida: a família NÃO foi derrubada.
+    const stillValid = await app.inject({
       method: 'POST',
       url: '/auth/refresh',
       body: { refreshToken: rotated.refreshToken },
     })
-    expect(poisoned.statusCode).toBe(401)
+    expect(stillValid.statusCode).toBe(200)
+  })
 
+  it('refresh concorrente com o mesmo token não desloga (regressão)', async () => {
+    const user = await makeUser()
+    const { refreshToken } = await loginTokens(user.email)
+
+    // Duas renovações em paralelo com o MESMO token — o cenário do app mobile
+    // quando várias requisições batem no 401 (access expirado) ao mesmo tempo.
+    const [a, b] = await Promise.all([
+      app.inject({
+        method: 'POST',
+        url: '/auth/refresh',
+        body: { refreshToken },
+      }),
+      app.inject({
+        method: 'POST',
+        url: '/auth/refresh',
+        body: { refreshToken },
+      }),
+    ])
+
+    // Uma vence o claim, a outra cai na carência: ambas renovam, ninguém desloga.
+    expect(a.statusCode).toBe(200)
+    expect(b.statusCode).toBe(200)
+
+    // A sessão sobrevive: ainda há refresh token ativo.
     const active = await testPrisma.refreshToken.count({
       where: { userId: user.id, revokedAt: null },
     })
-    expect(active).toBe(0)
+    expect(active).toBeGreaterThan(0)
   })
 
   it('refresh expirado → 401', async () => {
@@ -189,6 +250,38 @@ describe('logout / logout-all', () => {
       body: { refreshToken },
     })
     expect(after.statusCode).toBe(401)
+  })
+
+  it('reapresentar token revogado por logout não derruba as sessões irmãs', async () => {
+    // Logout revoga sem setar rotatedAt → reuso cai no "só nega a troca", nunca
+    // no wipe da família (que é exclusivo de reuso de token ROTACIONADO).
+    const user = await makeUser()
+    const first = await loginTokens(user.email)
+    const second = await loginTokens(user.email)
+
+    const out = await app.inject({
+      method: 'POST',
+      url: '/auth/logout',
+      headers: authHeader(user.id),
+      body: { refreshToken: first.refreshToken },
+    })
+    expect(out.statusCode).toBe(200)
+
+    // Reusar o token deslogado: negado (401), mas sem derrubar a outra sessão.
+    const reuse = await app.inject({
+      method: 'POST',
+      url: '/auth/refresh',
+      body: { refreshToken: first.refreshToken },
+    })
+    expect(reuse.statusCode).toBe(401)
+
+    // A segunda sessão continua ativa — a família não foi envenenada.
+    const stillValid = await app.inject({
+      method: 'POST',
+      url: '/auth/refresh',
+      body: { refreshToken: second.refreshToken },
+    })
+    expect(stillValid.statusCode).toBe(200)
   })
 
   it('logout exige sessão (401 sem auth)', async () => {

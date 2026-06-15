@@ -8,7 +8,14 @@ import { testPrisma } from './prisma'
 // requisições. Permite forjar estado (expirado/revogado) nos testes de rotação.
 export async function makeRefreshToken(
   userId: string,
-  overrides: { expiresAt?: Date; revokedAt?: Date | null } = {},
+  overrides: {
+    expiresAt?: Date
+    revokedAt?: Date | null
+    // `rotatedAt` marca revogação por ROTAÇÃO (≠ logout/reset): permite forjar um
+    // token rotacionado dentro/fora da janela de carência nos testes de reuso.
+    rotatedAt?: Date | null
+    replacedByTokenId?: string | null
+  } = {},
 ) {
   const raw = randomBytes(32).toString('base64url')
   const tokenHash = createHash('sha256').update(raw).digest('hex')
@@ -18,6 +25,8 @@ export async function makeRefreshToken(
       tokenHash,
       expiresAt: overrides.expiresAt ?? new Date(Date.now() + 90 * 86_400_000),
       revokedAt: overrides.revokedAt ?? null,
+      rotatedAt: overrides.rotatedAt ?? null,
+      replacedByTokenId: overrides.replacedByTokenId ?? null,
     },
   })
   return { raw, record }

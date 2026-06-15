@@ -41,13 +41,25 @@ export async function login(request: FastifyRequest, reply: FastifyReply) {
   return reply.send({ token, refreshToken })
 }
 
-// Rotaciona o refresh: valida o atual, emite um par novo e revoga o anterior
-// (encadeando a rotação). Reuso de token rotacionado derruba todas as sessões.
+// Rotaciona o refresh: valida o atual e emite um par novo. Na rotação normal,
+// encadeia o sucessor (auditoria da cadeia). No caso `grace` (reapresentação
+// benigna dentro da janela — refresh concorrente/retry), só reemite a sessão sem
+// encadear nem derrubar nada. Reuso de token rotacionado FORA da janela derruba
+// todas as sessões (ver rotateRefreshToken).
 export async function refresh(request: FastifyRequest, reply: FastifyReply) {
   const { refreshToken: presented } = request.body as RefreshBody
-  const { userId, previousTokenId } = await rotateRefreshToken(presented)
-  const session = await issueSession(reply, userId, sessionMeta(request))
-  await markRefreshTokenRotated(previousTokenId, session.refreshTokenId)
+  const result = await rotateRefreshToken(presented)
+  const session = await issueSession(reply, result.userId, sessionMeta(request))
+  if (result.kind === 'rotated') {
+    await markRefreshTokenRotated(
+      result.previousTokenId,
+      session.refreshTokenId,
+    )
+  }
+  // `grace`: NÃO encadeia de propósito — o token reemitido é "irmão", não
+  // sucessor (replacedByTokenId fica null). Trade-off aceito: a sessão fica
+  // órfã na cadeia de rotação (mais difícil de rastrear numa auditoria) em
+  // troca de não deslogar o usuário em refresh concorrente. Não é bug.
   return reply.send({
     token: session.token,
     refreshToken: session.refreshToken,
