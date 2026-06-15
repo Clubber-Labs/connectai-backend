@@ -89,6 +89,7 @@ export async function makeEvent(
     title?: string
     description?: string
     address?: string | null
+    seriesId?: string | null
   } = {},
 ) {
   const id = uid()
@@ -107,7 +108,77 @@ export async function makeEvent(
       isPublic: overrides.isPublic ?? true,
       isFeatured: overrides.isFeatured ?? false,
       canceledAt: overrides.canceledAt ?? null,
+      seriesId: overrides.seriesId ?? null,
       authorId,
+    },
+  })
+}
+
+export async function makeEventSeries(
+  authorId: string,
+  overrides: {
+    frequency?: 'WEEKLY' | 'MONTHLY'
+    interval?: number
+    until?: Date | null
+    count?: number | null
+    canceledAt?: Date | null
+    title?: string
+    description?: string | null
+    latitude?: number
+    longitude?: number
+    address?: string | null
+    /** Atalho legado: uma categoria única (vira `[category]`). */
+    category?: EventCategory
+    categories?: EventCategory[]
+    maxCapacity?: number | null
+    isPublic?: boolean
+    durationMs?: number | null
+  } = {},
+) {
+  const id = uid()
+  return testPrisma.eventSeries.create({
+    data: {
+      authorId,
+      frequency: overrides.frequency ?? 'WEEKLY',
+      interval: overrides.interval ?? 1,
+      until: overrides.until ?? null,
+      count: overrides.count ?? null,
+      canceledAt: overrides.canceledAt ?? null,
+      // Template default-preenchido: o reconciler pula séries sem template.
+      title: overrides.title ?? `Série ${id}`,
+      description: overrides.description ?? null,
+      latitude: overrides.latitude ?? -25.4,
+      longitude: overrides.longitude ?? -49.3,
+      address: overrides.address ?? null,
+      categories:
+        overrides.categories ??
+        (overrides.category ? [overrides.category] : ['PARTY']),
+      maxCapacity: overrides.maxCapacity ?? null,
+      isPublic: overrides.isPublic ?? true,
+      durationMs: overrides.durationMs ?? null,
+    },
+  })
+}
+
+export async function makeEventImage(
+  eventId: string,
+  overrides: {
+    url?: string
+    key?: string
+    format?: string
+    size?: number
+    order?: number
+  } = {},
+) {
+  const id = uid()
+  return testPrisma.eventImage.create({
+    data: {
+      eventId,
+      url: overrides.url ?? `https://cdn.test/${id}.webp`,
+      key: overrides.key ?? `events/${eventId}/${id}`,
+      format: overrides.format ?? 'webp',
+      size: overrides.size ?? 1024,
+      order: overrides.order ?? 0,
     },
   })
 }

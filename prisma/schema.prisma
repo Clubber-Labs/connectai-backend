@@ -94,6 +94,7 @@ model User {
 
   featuredEventsCreated FeaturedEvent[] @relation("featuredEventCreator")
   subscriptions         Subscription[]
+  eventSeries           EventSeries[]
 
   categoryPreferences UserCategoryPreference[]
 
@@ -120,6 +121,7 @@ model User {
   spotsCreated        Spot[]                @relation("spotsCreated")
   spotGenerationUsage SpotGenerationUsage[]
   spotDiscoveryUsage  SpotDiscoveryUsage[]
+  eventPromotionUsage EventPromotionUsage[]
 
   // Predicado do reconciler: PENDING_DELETION com scheduledDeletionAt vencido.
   @@index([accountStatus, scheduledDeletionAt])
@@ -379,16 +381,25 @@ model Event {
   authorId String
   author   User   @relation(fields: [authorId], references: [id])
 
-  attendances EventAttendance[]
-  posts       Post[]
-  comments    Comment[]
-  reactions   Reaction[]
-  invites     EventInvite[]
-  reports     Report[]
-  images      EventImage[]
-  features    FeaturedEvent[]
+  // Ocorrência de uma série recorrente (RF11.6). null = evento avulso. SetNull:
+  // apagar a série não apaga as ocorrências já materializadas.
+  seriesId String?
+  series   EventSeries? @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+
+  attendances      EventAttendance[]
+  posts            Post[]
+  comments         Comment[]
+  reactions        Reaction[]
+  invites          EventInvite[]
+  reports          Report[]
+  images           EventImage[]
+  features         FeaturedEvent[]
   analyticsMetrics EventAnalyticsMetric[]
 
+  // Único: uma ocorrência por (série, data). Torna a reposição idempotente e
+  // segura contra reconcilers concorrentes. seriesId NULL é distinto no
+  // Postgres, então eventos avulsos não são afetados.
+  @@unique([seriesId, date])
   @@index([date])
   @@index([isPublic, date])
   @@index([isFeatured, date, id])
@@ -396,6 +407,50 @@ model Event {
   // Join de visibilidade do autor (visibleAuthorWhere) na hidratação do mapa.
   @@index([authorId])
   @@map("events")
+}
+
+enum RecurrenceFrequency {
+  WEEKLY
+  MONTHLY
+}
+
+// Série de eventos recorrentes (RF11.6, premium). A regra mora aqui; cada
+// ocorrência é um Event materializado com seriesId apontando pra cá. O
+// reconciler repõe ocorrências futuras até um horizonte rolante quando
+// `until` é null. `count` (alternativa a `until`) limita o total de ocorrências.
+// MONTHLY usa o mesmo dia do mês com clamp para o último dia em meses curtos;
+// datas são UTC, então o horário local pode deslocar em mudanças de fuso/DST.
+model EventSeries {
+  id         String              @id @default(uuid())
+  frequency  RecurrenceFrequency
+  interval   Int                 @default(1)
+  until      DateTime?
+  count      Int?
+  authorId   String
+  author     User                @relation(fields: [authorId], references: [id])
+  canceledAt DateTime?
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+
+  // Template de conteúdo da série: o reconciler clona DESTES campos (não da
+  // última ocorrência), então editar uma ocorrência individual não propaga
+  // para as ocorrências geradas depois. Nullable: séries antigas não têm
+  // template e o reconciler as pula. durationMs = endDate-date da 1ª ocorrência.
+  title       String?
+  description String?
+  latitude    Float?
+  longitude   Float?
+  address     String?
+  categories  EventCategory[]
+  maxCapacity Int?
+  isPublic    Boolean         @default(true)
+  durationMs  Int?
+
+  events Event[]
+
+  // Predicado do reconciler: séries vivas que ainda podem crescer.
+  @@index([canceledAt, until])
+  @@map("event_series")
 }
 
 enum EventAnalyticsMetricType {
@@ -636,28 +691,28 @@ enum SubscriptionStatus {
 }
 
 model Subscription {
-  id                   String             @id @default(uuid())
-  userId               String
-  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  stripeSubscriptionId String             @unique
-  stripePriceId        String
-  status               SubscriptionStatus
-  trialEndsAt          DateTime?
-  currentPeriodStart   DateTime
-  currentPeriodEnd     DateTime
-  cancelAtPeriodEnd    Boolean            @default(false)
-  canceledAt           DateTime?
+  id                     String             @id @default(uuid())
+  userId                 String
+  user                   User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stripeSubscriptionId   String             @unique
+  stripePriceId          String
+  status                 SubscriptionStatus
+  trialEndsAt            DateTime?
+  currentPeriodStart     DateTime
+  currentPeriodEnd       DateTime
+  cancelAtPeriodEnd      Boolean            @default(false)
+  canceledAt             DateTime?
   // Método de pagamento (id do PaymentMethod no Stripe). Null = sem cartão. Um
   // trial criado pelo PaymentSheet nasce sem cartão; só vira premium quando o
   // SetupIntent conclui e grava o método aqui. "Sticky": eventos posteriores
   // sem o campo não zeram (ver upsertSubscriptionTx).
   defaultPaymentMethodId String?
-  startedAt            DateTime           @default(now())
+  startedAt              DateTime           @default(now())
   // Timestamp do último evento Stripe aplicado. Comparado com event.created
   // pra descartar eventos fora de ordem (Stripe não garante ordering).
-  lastSyncedAt         DateTime           @default(now())
-  createdAt            DateTime           @default(now())
-  updatedAt            DateTime           @updatedAt
+  lastSyncedAt           DateTime           @default(now())
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
 
   // userId NÃO é @unique: user pode ter histórico (canceladas + nova ativa).
   // Query "ativa": WHERE userId AND status IN (TRIALING, ACTIVE, PAST_DUE).
@@ -912,4 +967,22 @@ model SpotDiscoveryUsage {
 
   @@id([userId, day])
   @@map("spot_discovery_usage")
+}
+
+// Quota MENSAL de promoções de evento (RF11.4+, premium). Uma linha por
+// (usuário, mês); `period` é o 1º dia do mês em UTC. `count` é consumido de
+// forma atômica DENTRO da transação de criação do destaque — exceder o limite
+// (env PROMOTION_MONTHLY_LIMIT) lança 429 e o rollback desfaz o incremento.
+// Cancelar um destaque NÃO devolve a quota. O mês é calendário (não o ciclo
+// de billing) — aceitável no MVP.
+model EventPromotionUsage {
+  userId    String
+  period    DateTime @db.Date
+  count     Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, period])
+  @@map("event_promotion_usage")
 }
