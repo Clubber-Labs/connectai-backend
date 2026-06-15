@@ -299,7 +299,9 @@ const baseSchema = z.object({
   // é expurgada pelo reconciler (minimização LGPD).
   NOTIFY_MAX_RADIUS_KM: z.coerce.number().int().positive().default(50),
   // Teto do raio (km) da recomendação de spots — espelha NOTIFY_MAX_RADIUS_KM.
-  SPOT_MAX_RADIUS_KM: z.coerce.number().int().positive().default(50),
+  // min(2) = piso do schema de request (radiusKm/spotRadiusKm): abaixo disso a
+  // feature ficaria inutilizável (todo raio válido cairia no 400 do teto).
+  SPOT_MAX_RADIUS_KM: z.coerce.number().int().min(2).default(50),
   NOTIFY_LOCATION_TTL_DAYS: z.coerce.number().int().positive().default(90),
   NOTIFY_LOCATION_CLEANUP_INTERVAL_MS: z.coerce
     .number()

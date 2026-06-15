@@ -383,7 +383,9 @@ export async function generateSuggestions(
     await cache.set(key, suggestions, SUGGESTIONS_TTL_SECONDS)
   }
 
-  // Consome agora (sucesso garantido). Atômico = teto à prova de corrida.
+  // Consume atômico — teto à prova de corrida. O pre-flight acima (custo) não
+  // garante a vaga: sob concorrência extrema duas reqs passam o pre-flight e a
+  // segunda perde a corrida aqui (allowed=false → 429). Caso feliz é dominante.
   const quota = await consumeGenerationQuota(userId, limit)
   if (!quota.allowed) {
     throw {
