@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { EVENT_CATEGORIES } from '../../lib/event-categories'
+import { SELECTABLE_CATEGORIES } from '../../lib/event-categories'
 import { buildApp } from '../../test/app'
 import { testPrisma } from '../../test/prisma'
 
@@ -17,16 +17,27 @@ afterAll(async () => {
 })
 
 describe('GET /categories', () => {
-  it('lista todas as categorias com rótulo pt-BR por default', async () => {
+  it('lista as categorias selecionáveis com rótulo pt-BR por default', async () => {
     const res = await app.inject({ method: 'GET', url: '/categories' })
 
     expect(res.statusCode).toBe(200)
     const body = res.json()
     expect(body.locale).toBe('pt-BR')
-    expect(body.data).toHaveLength(EVENT_CATEGORIES.length)
+    expect(body.data).toHaveLength(SELECTABLE_CATEGORIES.length)
     expect(body.data).toEqual(
-      expect.arrayContaining([{ value: 'MUSIC', label: 'Música' }]),
+      expect.arrayContaining([
+        { value: 'MUSIC', label: 'Música' },
+        { value: 'CAFE', label: 'Café e doceria' },
+        { value: 'COMEDY', label: 'Comédia' },
+        { value: 'MARKETS', label: 'Feiras e mercados' },
+      ]),
     )
+  })
+
+  it('não oferece categorias descontinuadas (RELIGION)', async () => {
+    const res = await app.inject({ method: 'GET', url: '/categories' })
+    const values = res.json().data.map((c: { value: string }) => c.value)
+    expect(values).not.toContain('RELIGION')
   })
 
   it('é público (não exige autenticação)', async () => {

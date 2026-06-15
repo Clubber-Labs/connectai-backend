@@ -14,6 +14,7 @@ export const EVENT_CATEGORIES = [
   'SPORTS',
   'TECH',
   'GASTRONOMY',
+  'CAFE',
   'ART',
   'EDUCATION',
   'NIGHTLIFE',
@@ -22,7 +23,9 @@ export const EVENT_CATEGORIES = [
   'OUTDOORS',
   'GAMING',
   'FILM_THEATER',
+  'COMEDY',
   'FASHION',
+  'MARKETS',
   'RELIGION',
   'FAMILY',
   'PETS',
@@ -33,7 +36,27 @@ export const EVENT_CATEGORIES = [
 
 export type EventCategory = (typeof EVENT_CATEGORIES)[number]
 
+// Valores válidos (inclui legados): aceita o que já existe no banco. eventCategorySchema
+// valida QUALQUER categoria armazenada — usado para dados/saída.
 export const eventCategorySchema = z.enum(EVENT_CATEGORIES)
+
+// Categorias DESCONTINUADAS: continuam válidas como dado legado, mas não são
+// oferecidas para nova seleção (some do /categories e da validação de input).
+const DEPRECATED_CATEGORIES = new Set<EventCategory>(['RELIGION'])
+
+// Categorias SELECIONÁVEIS: o subconjunto que o usuário pode escolher hoje. É a
+// fonte do GET /categories e da validação de input (criar evento, preferências).
+export const SELECTABLE_CATEGORIES = EVENT_CATEGORIES.filter(
+  (c) => !DEPRECATED_CATEGORIES.has(c),
+) as Exclude<EventCategory, 'RELIGION'>[]
+
+// Tipo estreito (exclui as descontinuadas). Faz o schema e quem o consome
+// inferirem o subconjunto, não o EventCategory inteiro (RELIGION fora também no tipo).
+export type SelectableCategory = (typeof SELECTABLE_CATEGORIES)[number]
+
+export const selectableCategorySchema = z.enum(
+  SELECTABLE_CATEGORIES as [SelectableCategory, ...SelectableCategory[]],
+)
 
 /**
  * Locale padrão (lançamento no Brasil). Usado como fallback quando o
@@ -52,6 +75,7 @@ const CATEGORY_LABELS: Record<string, Record<EventCategory, string>> = {
     SPORTS: 'Esportes',
     TECH: 'Tecnologia',
     GASTRONOMY: 'Gastronomia',
+    CAFE: 'Café e doceria',
     ART: 'Arte',
     EDUCATION: 'Educação',
     NIGHTLIFE: 'Vida noturna',
@@ -60,7 +84,9 @@ const CATEGORY_LABELS: Record<string, Record<EventCategory, string>> = {
     OUTDOORS: 'Ar livre',
     GAMING: 'Games',
     FILM_THEATER: 'Cinema e teatro',
+    COMEDY: 'Comédia',
     FASHION: 'Moda',
+    MARKETS: 'Feiras e mercados',
     RELIGION: 'Religião',
     FAMILY: 'Família',
     PETS: 'Pets',
@@ -98,5 +124,6 @@ export function listCategories(
   locale: string = DEFAULT_LOCALE,
 ): CategoryOption[] {
   const labels = CATEGORY_LABELS[locale] ?? CATEGORY_LABELS[DEFAULT_LOCALE]
-  return EVENT_CATEGORIES.map((value) => ({ value, label: labels[value] }))
+  // Só as selecionáveis: categorias descontinuadas (ex.: RELIGION) não aparecem.
+  return SELECTABLE_CATEGORIES.map((value) => ({ value, label: labels[value] }))
 }

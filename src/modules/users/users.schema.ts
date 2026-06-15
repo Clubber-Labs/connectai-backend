@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { eventCategorySchema } from '../../lib/event-categories'
+import { selectableCategorySchema } from '../../lib/event-categories'
 
 export const createUserSchema = z.object({
   name: z
@@ -29,7 +29,7 @@ export const createUserSchema = z.object({
     .optional(),
   isPrivate: z.boolean().default(false),
   birthdate: z.coerce.date(),
-  preferredCategories: z.array(eventCategorySchema).max(10).optional(),
+  preferredCategories: z.array(selectableCategorySchema).max(10).optional(),
 })
 
 export type CreateUserBody = z.infer<typeof createUserSchema>
