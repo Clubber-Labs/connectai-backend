@@ -56,6 +56,10 @@ export async function refresh(request: FastifyRequest, reply: FastifyReply) {
       session.refreshTokenId,
     )
   }
+  // `grace`: NÃO encadeia de propósito — o token reemitido é "irmão", não
+  // sucessor (replacedByTokenId fica null). Trade-off aceito: a sessão fica
+  // órfã na cadeia de rotação (mais difícil de rastrear numa auditoria) em
+  // troca de não deslogar o usuário em refresh concorrente. Não é bug.
   return reply.send({
     token: session.token,
     refreshToken: session.refreshToken,

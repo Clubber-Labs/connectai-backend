@@ -73,6 +73,8 @@ export async function claimRefreshToken(tokenHash: string) {
     where: { tokenHash, revokedAt: null, expiresAt: { gt: now } },
     data: { revokedAt: now, rotatedAt: now },
   })
+  // `record` é o snapshot PRÉ-update: no claim vencedor só `id` e `userId` são
+  // confiáveis (revokedAt/rotatedAt ainda valem null aqui, não o `now` recém-gravado).
   if (result.count > 0) return { record, claimed: true }
   const current = await prisma.refreshToken.findUnique({ where: { tokenHash } })
   return { record: current ?? record, claimed: false }

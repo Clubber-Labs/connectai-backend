@@ -252,6 +252,38 @@ describe('logout / logout-all', () => {
     expect(after.statusCode).toBe(401)
   })
 
+  it('reapresentar token revogado por logout não derruba as sessões irmãs', async () => {
+    // Logout revoga sem setar rotatedAt → reuso cai no "só nega a troca", nunca
+    // no wipe da família (que é exclusivo de reuso de token ROTACIONADO).
+    const user = await makeUser()
+    const first = await loginTokens(user.email)
+    const second = await loginTokens(user.email)
+
+    const out = await app.inject({
+      method: 'POST',
+      url: '/auth/logout',
+      headers: authHeader(user.id),
+      body: { refreshToken: first.refreshToken },
+    })
+    expect(out.statusCode).toBe(200)
+
+    // Reusar o token deslogado: negado (401), mas sem derrubar a outra sessão.
+    const reuse = await app.inject({
+      method: 'POST',
+      url: '/auth/refresh',
+      body: { refreshToken: first.refreshToken },
+    })
+    expect(reuse.statusCode).toBe(401)
+
+    // A segunda sessão continua ativa — a família não foi envenenada.
+    const stillValid = await app.inject({
+      method: 'POST',
+      url: '/auth/refresh',
+      body: { refreshToken: second.refreshToken },
+    })
+    expect(stillValid.statusCode).toBe(200)
+  })
+
   it('logout exige sessão (401 sem auth)', async () => {
     const res = await app.inject({
       method: 'POST',
