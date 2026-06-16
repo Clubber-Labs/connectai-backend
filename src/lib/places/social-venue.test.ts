@@ -44,8 +44,14 @@ describe('isSocialVenue', () => {
     expect(isSocialVenue([])).toBe(false)
   })
 
-  it('um tipo banido VETA mesmo havendo tipo social', () => {
-    expect(isSocialVenue(['bar', 'gym'])).toBe(false)
+  it('a âncora social VENCE tipos de varejo/serviço secundários (casos reais)', () => {
+    // Validado no probe real: vetar por tipo secundário derrubava venue legítimo.
+    expect(isSocialVenue(['night_club', 'bar', 'spa'])).toBe(true) // balada+spa
+    expect(
+      isSocialVenue(['japanese_restaurant', 'sushi_restaurant', 'hotel']),
+    ).toBe(true) // restaurante em hotel
+    expect(isSocialVenue(['coffee_shop', 'cafe', 'book_store'])).toBe(true) // café-livraria
+    expect(isSocialVenue(['live_music_venue', 'event_venue'])).toBe(true) // casa de show
   })
 
   it('aceita os venues típicos de rolê', () => {

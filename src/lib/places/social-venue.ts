@@ -9,7 +9,7 @@ import { SUBCATEGORIES } from '../subcategories'
 
 // Categorias da taxonomia que representam "lugar de passar tempo em grupo".
 // SPORTS, HEALTH_WELLNESS, FASHION, EDUCATION, PETS ficam de fora (uso
-// individual/serviço/varejo) — e os tipos delas viram a base da blacklist.
+// individual/serviço/varejo) — seus tipos simplesmente não entram na whitelist.
 const SOCIAL_CATEGORIES = new Set<EventCategory>([
   'PARTY',
   'NIGHTLIFE',
@@ -25,13 +25,12 @@ const SOCIAL_CATEGORIES = new Set<EventCategory>([
 ])
 
 // Tipos sociais que o Places (New) emite mas a taxonomia não lista nominalmente
-// (cozinhas específicas, variações de bar). O Places quase sempre acompanha do
-// genérico 'restaurant', mas alguns venues vêm só com o tipo fino — daí o reforço.
+// (cozinhas específicas, variações de bar, casas de evento). Validados no probe
+// real (Curitiba): sem eles, casas de show (live_music_venue) e restaurantes de
+// cozinha específica eram descartados. NÃO inclui o genérico 'food' (casaria
+// supermercado): restaurante sempre vem com o tipo 'restaurant'.
 const SOCIAL_EXTRA_TYPES = [
   'restaurant',
-  'food',
-  'meal_takeaway',
-  'meal_delivery',
   'fine_dining_restaurant',
   'hamburger_restaurant',
   'seafood_restaurant',
@@ -39,6 +38,7 @@ const SOCIAL_EXTRA_TYPES = [
   'mexican_restaurant',
   'chinese_restaurant',
   'japanese_restaurant',
+  'asian_restaurant',
   'thai_restaurant',
   'indian_restaurant',
   'french_restaurant',
@@ -52,12 +52,18 @@ const SOCIAL_EXTRA_TYPES = [
   'ramen_restaurant',
   'barbecue_restaurant',
   'breakfast_restaurant',
+  'buffet_restaurant',
   'cafeteria',
   'bar',
   'cocktail_bar',
+  'hookah_bar',
   'acai_shop',
   'diner',
   'bistro',
+  // casas de show / espaços de evento (rolê é justamente o que acontece nelas)
+  'live_music_venue',
+  'event_venue',
+  'banquet_hall',
 ]
 
 /** Tipos do Places que ANCORAM um candidato como social (derivado da taxonomia). */
@@ -68,69 +74,14 @@ export const SOCIAL_PLACE_TYPES = new Set<string>([
   ...SOCIAL_EXTRA_TYPES,
 ])
 
-// Tipos claramente NÃO-sociais (varejo nominal/serviço/ensino) que VETAM um
-// candidato mesmo que ele também carregue um tipo social. NÃO inclui o genérico
-// 'store': lojas de COMIDA sociais (padaria, sorveteria, doceria) também o
-// carregam — vetá-lo derrubaria venue legítimo. Por isso a blacklist é nominal.
-export const NON_SOCIAL_PLACE_TYPES = new Set<string>([
-  // esporte / bem-estar / beleza (uso individual)
-  'gym',
-  'fitness_center',
-  'spa',
-  'sauna',
-  'massage',
-  'yoga_studio',
-  'wellness_center',
-  'beauty_salon',
-  'hair_salon',
-  'nail_salon',
-  'barber_shop',
-  // varejo nominal (compra e vai embora)
-  'clothing_store',
-  'department_store',
-  'shopping_mall',
-  'shoe_store',
-  'jewelry_store',
-  'electronics_store',
-  'furniture_store',
-  'hardware_store',
-  'home_goods_store',
-  'book_store',
-  'convenience_store',
-  'grocery_store',
-  'supermarket',
-  'liquor_store',
-  // ensino / produção (aprende ou produz, não curte)
-  'library',
-  'university',
-  'school',
-  'primary_school',
-  'secondary_school',
-  'preschool',
-  // pet / saúde / serviços
-  'dog_park',
-  'pet_store',
-  'veterinary_care',
-  'hospital',
-  'doctor',
-  'dentist',
-  'pharmacy',
-  'bank',
-  'atm',
-  'gas_station',
-  'car_repair',
-  'lodging',
-  'hotel',
-])
-
 /**
- * Um candidato é um venue social quando carrega ao menos um tipo social E nenhum
- * tipo banido. A whitelist garante uma âncora ("é mesmo um lugar de rolê"); a
- * blacklist veta híbridos varejo/serviço que por acaso também tenham tipo social.
+ * Um candidato é um venue social quando carrega ao menos um tipo social. A âncora
+ * social VENCE tipos de varejo/serviço que apareçam junto: o probe real mostrou
+ * que vetar por tipo secundário derruba venues legítimos (uma balada que também é
+ * `spa`, um restaurante dentro de `hotel`, um café que também é `book_store`).
+ * Varejo/serviço puro (loja, academia, escola) simplesmente não tem tipo social e
+ * cai fora. A IA ainda ranqueia e descarta matches fracos numa segunda passada.
  */
 export function isSocialVenue(types: string[]): boolean {
-  return (
-    types.some((t) => SOCIAL_PLACE_TYPES.has(t)) &&
-    !types.some((t) => NON_SOCIAL_PLACE_TYPES.has(t))
-  )
+  return types.some((t) => SOCIAL_PLACE_TYPES.has(t))
 }
