@@ -59,7 +59,7 @@ afterAll(async () => {
 })
 
 describe('POST /spots/suggestions', () => {
-  it('gera sugestões filtradas pelas preferências (200)', async () => {
+  it('gera sugestões a partir do perfil via Text Search (200)', async () => {
     const user = await makeUser()
     await makeUserCategoryPreference(user.id, 'PARTY')
 
@@ -67,11 +67,9 @@ describe('POST /spots/suggestions', () => {
     expect(res.statusCode).toBe(200)
     const body = res.json()
     expect(body.suggestions.length).toBeGreaterThan(0)
-    expect(
-      body.suggestions.every(
-        (s: { category: string }) => s.category === 'PARTY',
-      ),
-    ).toBe(true)
+    // O perfil vira frase de busca (rótulo da categoria), não Nearby por tipo.
+    expect(fakePlaces.lastText?.textQuery).toBe('Festa')
+    expect(fakePlaces.lastNearby).toBeNull()
     // A camada de IA escreveu a copy de cada candidato.
     expect(body.suggestions[0].suggestedTitle).toMatch(/^IA:/)
     expect(body.remaining).toBe(4) // 5 free - 1
@@ -87,10 +85,12 @@ describe('POST /spots/suggestions', () => {
     const { suggestions } = res.json()
 
     expect(suggestions).toHaveLength(2)
-    // O fake enhancer inverte a ordem do Places: prova que o service usa o
-    // ranqueamento da IA, não a ordem crua do Places.
-    expect(suggestions[0].category).toBe('PARTY')
-    expect(suggestions[1].category).toBe('MUSIC')
+    // Duas frases (Festa, Música) → 2 candidatos; o fake enhancer inverte a
+    // ordem: prova que o service usa o ranqueamento da IA, não a ordem crua.
+    expect(suggestions.map((s: { placeId: string }) => s.placeId)).toEqual([
+      'fake_text_Música',
+      'fake_text_Festa',
+    ])
     // E a copy veio da IA em todos.
     expect(
       suggestions.every((s: { suggestedTitle: string }) =>
@@ -146,19 +146,17 @@ describe('POST /spots/suggestions', () => {
     expect(usage).toHaveLength(0)
   })
 
-  it('preferência sem mapeamento no Places retorna 400 sem consumir quota', async () => {
+  it('categoria sem tipo no Places (TECH) agora busca por texto', async () => {
     const user = await makeUser()
-    await makeUserCategoryPreference(user.id, 'TECH') // sem tipo no Places
+    await makeUserCategoryPreference(user.id, 'TECH')
 
     const res = await suggest(user.id)
-    expect(res.statusCode).toBe(400)
-    expect(res.json().code).toBe('SPOT_PREFERENCES_NO_PLACES')
-    expect(fakePlaces.calls).toBe(0)
 
-    const usage = await testPrisma.spotGenerationUsage.findMany({
-      where: { userId: user.id },
-    })
-    expect(usage).toHaveLength(0)
+    // Antes dava 400 (sem tipo no Places). Com Text Search, o rótulo da
+    // categoria vira a frase de busca — TECH passa a ser pesquisável.
+    expect(res.statusCode).toBe(200)
+    expect(fakePlaces.lastText?.textQuery).toBe('Tecnologia')
+    expect(res.json().suggestions.length).toBeGreaterThan(0)
   })
 
   it('usa o raio salvo do usuário (spotRadiusKm) como default', async () => {
@@ -167,8 +165,8 @@ describe('POST /spots/suggestions', () => {
 
     await suggest(user.id)
 
-    expect(fakePlaces.lastNearby?.radiusMeters).toBe(30000)
-    expect(fakePlaces.lastNearby?.limit).toBe(20)
+    expect(fakePlaces.lastText?.radiusMeters).toBe(30000)
+    expect(fakePlaces.lastText?.limit).toBe(20)
   })
 
   it('o radiusKm do request sobrescreve o raio salvo', async () => {
@@ -182,7 +180,7 @@ describe('POST /spots/suggestions', () => {
       body: { ...POINT, radiusKm: 40 },
     })
 
-    expect(fakePlaces.lastNearby?.radiusMeters).toBe(40000)
+    expect(fakePlaces.lastText?.radiusMeters).toBe(40000)
   })
 
   it('rejeita radiusKm acima do teto (400)', async () => {
@@ -324,28 +322,29 @@ describe('POST /spots/suggestions', () => {
     expect(fakePlaces.calls).toBe(2)
   })
 
-  it('subcategoria de venue estreita os tipos da busca (precise-first)', async () => {
+  it('subcategoria de venue entra na busca por texto (cobre a categoria-pai)', async () => {
     const user = await makeUser()
     await makeUserCategoryPreference(user.id, 'GASTRONOMY')
     await makeUserSubcategoryPreference(user.id, 'GASTRONOMY_JAPONESA')
 
     await suggest(user.id)
 
-    // Em vez de todos os tipos de GASTRONOMY, só os da subcategoria escolhida.
-    expect(fakePlaces.lastNearby?.includedTypes).toEqual(['sushi_restaurant'])
+    // O rótulo da subcategoria vira a frase; não há mais Nearby por tipo.
+    expect(fakePlaces.lastText?.textQuery).toBe('Japonesa')
+    expect(fakePlaces.lastNearby).toBeNull()
   })
 
-  it('gênero não estreita a busca (Places não filtra estilo)', async () => {
+  it('gênero DRIVA a busca por texto (o que o Nearby por tipo ignorava)', async () => {
     const user = await makeUser()
     await makeUserCategoryPreference(user.id, 'PARTY')
     await makeUserSubcategoryPreference(user.id, 'GENRE_FUNK')
 
     await suggest(user.id)
 
-    // Gênero não tem tipo do Places → busca cai nos tipos do nível de categoria.
-    expect(fakePlaces.lastNearby?.includedTypes).toEqual(
-      expect.arrayContaining(['night_club', 'dance_hall']),
-    )
+    // O gênero (ancorado num venue) passa a ser a busca — antes era ignorado
+    // porque o Places não tem tipo pra estilo musical.
+    expect(fakePlaces.lastText?.textQuery).toBe('balada funk')
+    expect(fakePlaces.lastNearby).toBeNull()
   })
 
   it('subcategorias diferentes não compartilham cache', async () => {
