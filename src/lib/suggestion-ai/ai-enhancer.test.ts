@@ -2,7 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk'
 import { describe, expect, it, vi } from 'vitest'
 import { suggestionsEnhancerFallbackTotal } from '../metrics'
 import type { PlaceCandidate } from '../places'
-import { HaikuSuggestionEnhancer } from './haiku-enhancer.service'
+import { AiSuggestionEnhancer } from './ai-enhancer.service'
 
 /** Lê o valor atual do contador de fallback para um motivo (0 se ausente). */
 async function fallbackCount(reason: string): Promise<number> {
@@ -41,7 +41,7 @@ function stubClient(ranked: unknown, onCall?: (body: unknown) => void) {
 
 const ctx = { criterion: 'arte' }
 
-describe('HaikuSuggestionEnhancer.enhance', () => {
+describe('AiSuggestionEnhancer.enhance', () => {
   it('honra a ordem da IA e escreve a copy', async () => {
     const a = candidate({ placeId: 'a', name: 'A' })
     const b = candidate({ placeId: 'b', name: 'B' })
@@ -52,10 +52,7 @@ describe('HaikuSuggestionEnhancer.enhance', () => {
       ],
     })
 
-    const result = await new HaikuSuggestionEnhancer(client).enhance(
-      [a, b],
-      ctx,
-    )
+    const result = await new AiSuggestionEnhancer(client).enhance([a, b], ctx)
 
     expect(result.map((r) => r.placeId)).toEqual(['b', 'a'])
     expect(result[0].suggestedTitle).toBe('Rolê no B')
@@ -71,7 +68,7 @@ describe('HaikuSuggestionEnhancer.enhance', () => {
       ranked: [{ placeId: 'a', title: 'só o A', description: null }],
     })
 
-    const result = await new HaikuSuggestionEnhancer(client).enhance(
+    const result = await new AiSuggestionEnhancer(client).enhance(
       [a, b, c],
       ctx,
     )
@@ -84,10 +81,7 @@ describe('HaikuSuggestionEnhancer.enhance', () => {
     const b = candidate({ placeId: 'b', name: 'B' })
     const { client } = stubClient({ ranked: [] })
 
-    const result = await new HaikuSuggestionEnhancer(client).enhance(
-      [a, b],
-      ctx,
-    )
+    const result = await new AiSuggestionEnhancer(client).enhance([a, b], ctx)
 
     expect(result.map((r) => r.placeId)).toEqual(['a', 'b'])
     expect(result[0].suggestedTitle).toBe('Bora um rolê no A?')
@@ -102,7 +96,7 @@ describe('HaikuSuggestionEnhancer.enhance', () => {
       ],
     })
 
-    const result = await new HaikuSuggestionEnhancer(client).enhance([a], ctx)
+    const result = await new AiSuggestionEnhancer(client).enhance([a], ctx)
 
     expect(result.map((r) => r.placeId)).toEqual(['a'])
   })
@@ -117,7 +111,7 @@ describe('HaikuSuggestionEnhancer.enhance', () => {
       messages: { parse },
     } as unknown as Pick<Anthropic, 'messages'>
 
-    const result = await new HaikuSuggestionEnhancer(client).enhance([a], ctx)
+    const result = await new AiSuggestionEnhancer(client).enhance([a], ctx)
 
     expect(result).toHaveLength(1)
     expect(result[0].suggestedTitle).toBe('Bora um rolê no A?')
@@ -132,7 +126,7 @@ describe('HaikuSuggestionEnhancer.enhance', () => {
       sent = messages[0]
     })
 
-    await new HaikuSuggestionEnhancer(client).enhance(
+    await new AiSuggestionEnhancer(client).enhance(
       [
         candidate({
           placeId: 'a',
@@ -165,7 +159,7 @@ describe('HaikuSuggestionEnhancer.enhance', () => {
       sent = (body as { messages: { content: string }[] }).messages[0]
     })
 
-    await new HaikuSuggestionEnhancer(client).enhance([candidate()], {
+    await new AiSuggestionEnhancer(client).enhance([candidate()], {
       criterion: 'bar com música ao vivo',
     })
 

@@ -11,7 +11,12 @@ import type {
 } from './suggestion-enhancer.interface'
 import { templateTitle } from './template-enhancer.service'
 
-const MODEL = 'claude-haiku-4-5'
+// Sonnet 4.6 (não Haiku) no ranqueamento+copy: um A/B com dados reais mostrou que
+// o Sonnet ordena melhor por aderência ao critério (traz o venue certo no topo) e
+// escreve o "chamado convidativo" que o Haiku ignorava (só repetia o nome). Custa
+// ~3x mais (US$3/15 vs 1/5 por 1M tokens), compensado pela qualidade. O composer
+// de query fica no Haiku — lá o ganho do Sonnet é marginal.
+const MODEL = 'claude-sonnet-4-6'
 const MAX_TOKENS = 2048
 // Tetos hard aplicados no mapeamento (o prompt pede 60, mas o servidor é a
 // fonte da verdade do contrato — trunca em vez de confiar no modelo).
@@ -51,11 +56,11 @@ function fallback(candidates: PlaceCandidate[]): EnhancedCandidate[] {
 }
 
 /**
- * Enhancer via Claude Haiku: ranqueia + escreve a copy numa única chamada
- * (structured output). Resiliente: qualquer falha da IA cai no template, então
- * a geração de sugestões nunca quebra por causa do LLM.
+ * Enhancer via Claude (Sonnet 4.6, ver MODEL): ranqueia + escreve a copy numa
+ * única chamada (structured output). Resiliente: qualquer falha da IA cai no
+ * template, então a geração de sugestões nunca quebra por causa do LLM.
  */
-export class HaikuSuggestionEnhancer implements ISuggestionEnhancer {
+export class AiSuggestionEnhancer implements ISuggestionEnhancer {
   // Recebe o client (em vez do apiKey) para ser injetável em teste; o wiring de
   // produção monta o Anthropic em suggestion-ai/index.ts.
   constructor(private readonly client: Pick<Anthropic, 'messages'>) {}

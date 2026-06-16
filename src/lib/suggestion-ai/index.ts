@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { env } from '../env'
-import { HaikuSuggestionEnhancer } from './haiku-enhancer.service'
+import { AiSuggestionEnhancer } from './ai-enhancer.service'
 import { HaikuProfileQueryComposer } from './haiku-query-composer.service'
 import type { IProfileQueryComposer } from './profile-query-composer.interface'
 import type { ISuggestionEnhancer } from './suggestion-enhancer.interface'
@@ -17,9 +17,7 @@ let instance: ISuggestionEnhancer | null = null
 export function getSuggestionEnhancer(): ISuggestionEnhancer {
   if (instance) return instance
   instance = env.ANTHROPIC_API_KEY
-    ? new HaikuSuggestionEnhancer(
-        new Anthropic({ apiKey: env.ANTHROPIC_API_KEY }),
-      )
+    ? new AiSuggestionEnhancer(new Anthropic({ apiKey: env.ANTHROPIC_API_KEY }))
     : new TemplateSuggestionEnhancer()
   return instance
 }
