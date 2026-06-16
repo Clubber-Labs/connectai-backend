@@ -33,8 +33,10 @@ export class FakePlacesService implements IPlacesClient {
   calls = 0
   lastNearby: SearchNearbyParams | null = null
   lastText: SearchTextParams | null = null
-  /** Sobrescreva para roteirizar o retorno da Nearby num cenário. */
-  override: ((params: SearchNearbyParams) => PlaceCandidate[]) | null = null
+  /** Sobrescreva para roteirizar o retorno da busca (Nearby ou Text) num cenário. */
+  override:
+    | ((params: { latitude: number; longitude: number }) => PlaceCandidate[])
+    | null = null
 
   async searchNearby(params: SearchNearbyParams): Promise<PlaceCandidate[]> {
     this.calls++
@@ -54,6 +56,7 @@ export class FakePlacesService implements IPlacesClient {
   async searchText(params: SearchTextParams): Promise<PlaceCandidate[]> {
     this.calls++
     this.lastText = params
+    if (this.override) return this.override(params)
     // Determinístico: um candidato "de texto" rotulado como OTHER (a Text Search
     // não deriva de categoria de perfil).
     return [

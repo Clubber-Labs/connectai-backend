@@ -1,12 +1,9 @@
 import { cache } from '../../lib/cache'
 import { env } from '../../lib/env'
 import type { EventCategory } from '../../lib/event-categories'
-import { getPlacesClient } from '../../lib/places'
-import {
-  placeTypesForCategories,
-  placeTypesForSubcategories,
-} from '../../lib/places/place-category-map'
-import { interestLabels, parentCategoryOf } from '../../lib/subcategories'
+import { getPlacesClient, type PlaceCandidate } from '../../lib/places'
+import { buildProfileSearchQueries } from '../../lib/places/search-query'
+import { interestLabels } from '../../lib/subcategories'
 import {
   type EnhancedCandidate,
   getSuggestionEnhancer,
@@ -317,7 +314,7 @@ export async function generateSuggestions(
   // intenção, o texto basta — perfil é ignorado (decisão de produto).
   let sortedCats: EventCategory[] = []
   let sortedSubcats: string[] = []
-  let includedTypes: string[] = []
+  let searchQueries: string[] = []
   if (!intent) {
     const categories = await findUserPreferredCategories(userId)
     if (categories.length === 0) {
@@ -328,31 +325,11 @@ export async function generateSuggestions(
       }
     }
     const subcats = await findUserPreferredSubcategories(userId)
-    // Busca PRECISA: as subcategorias de venue escolhidas estreitam os tipos;
-    // categorias sem subcategoria escolhida usam os tipos do nível. Gêneros não
-    // têm tipo do Places, então não estreitam (entram só no ranqueamento da IA).
-    const catsWithVenueSub = new Set(
-      subcats
-        .map(parentCategoryOf)
-        .filter((c): c is EventCategory => c !== undefined),
-    )
-    includedTypes = [
-      ...new Set([
-        ...placeTypesForSubcategories(subcats),
-        ...placeTypesForCategories(
-          categories.filter((c) => !catsWithVenueSub.has(c)),
-        ),
-      ]),
-    ]
-    // Nenhuma preferência mapeia para tipo do Places (ex.: só TECH/BUSINESS):
-    // a busca devolveria locais aleatórios. Barra ANTES de consumir quota.
-    if (includedTypes.length === 0) {
-      throw {
-        statusCode: 400,
-        message: 'Suas preferências de rolê ainda não têm sugestões de locais',
-        code: 'SPOT_PREFERENCES_NO_PLACES',
-      }
-    }
+    // Busca por SIGNIFICADO (Text Search): o perfil vira frases — o gênero
+    // ("eletrônica") entra na busca de verdade, em vez de ser ignorado pelo tipo
+    // do Places (Nearby). Toda categoria tem rótulo, então sempre há ao menos uma
+    // frase (TECH/BUSINESS passam a ser pesquisáveis por texto).
+    searchQueries = buildProfileSearchQueries(categories, subcats)
     sortedCats = [...categories].sort()
     sortedSubcats = [...subcats].sort()
   }
@@ -385,22 +362,35 @@ export async function generateSuggestions(
   // só no cache miss.
   let suggestions = await cache.get<EnhancedCandidate[]>(key)
   if (!suggestions) {
-    const found = intent
-      ? await getPlacesClient().searchText({
-          textQuery: intent,
-          latitude: body.latitude,
-          longitude: body.longitude,
-          radiusMeters,
-          limit: SEARCH_LIMIT,
-        })
-      : await getPlacesClient().searchNearby({
-          latitude: body.latitude,
-          longitude: body.longitude,
-          categories: sortedCats,
-          includedTypes,
-          radiusMeters,
-          limit: SEARCH_LIMIT,
-        })
+    let found: PlaceCandidate[]
+    if (intent) {
+      found = await getPlacesClient().searchText({
+        textQuery: intent,
+        latitude: body.latitude,
+        longitude: body.longitude,
+        radiusMeters,
+        limit: SEARCH_LIMIT,
+      })
+    } else {
+      // Perfil: uma Text Search por frase composta, em paralelo, mescladas e
+      // deduplicadas por placeId (o mesmo lugar pode casar mais de uma frase).
+      const perQuery = await Promise.all(
+        searchQueries.map((textQuery) =>
+          getPlacesClient().searchText({
+            textQuery,
+            latitude: body.latitude,
+            longitude: body.longitude,
+            radiusMeters,
+            limit: SEARCH_LIMIT,
+          }),
+        ),
+      )
+      const byId = new Map<string, PlaceCandidate>()
+      for (const c of perQuery.flat()) {
+        if (!byId.has(c.placeId)) byId.set(c.placeId, c)
+      }
+      found = [...byId.values()]
+    }
     // Teto de distância: corta o que ficou absurdamente longe do alcance pedido.
     const within = found.filter(
       (c) => c.distanceMeters <= radiusMeters * DISTANCE_CAP_MULTIPLIER,
