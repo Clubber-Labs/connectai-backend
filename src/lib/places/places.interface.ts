@@ -6,9 +6,8 @@ export type PlaceCandidate = {
   name: string
   latitude: number
   longitude: number
-  category: EventCategory
-  /** Subcategoria de venue inferida dos tipos (palpite, null se nenhum). */
-  subcategory: string | null
+  /** Tipos crus do Google Places (New) — base do filtro de venue social. */
+  types: string[]
   address: string | null
   // Sinais de qualidade/relevância para o ranqueamento da IA. `null` quando o
   // Places não traz o dado; `distanceMeters` é sempre calculado do ponto da busca.

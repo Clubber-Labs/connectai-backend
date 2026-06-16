@@ -1,10 +1,6 @@
 import { haversineMeters } from '../geo/distance'
 import { placesSearchTotal } from '../metrics'
-import {
-  categoryForPlaceTypes,
-  placeTypesForCategories,
-  subcategoryForPlaceTypes,
-} from './place-category-map'
+import { placeTypesForCategories } from './place-category-map'
 import type {
   IPlacesClient,
   PlaceCandidate,
@@ -151,8 +147,7 @@ export class GooglePlacesService implements IPlacesClient {
       name: p.displayName?.text ?? 'Local',
       latitude: p.location.latitude,
       longitude: p.location.longitude,
-      category: categoryForPlaceTypes(p.types ?? []),
-      subcategory: subcategoryForPlaceTypes(p.types ?? []),
+      types: p.types ?? [],
       address: p.formattedAddress ?? null,
       rating: p.rating ?? null,
       userRatingCount: p.userRatingCount ?? null,

@@ -79,8 +79,6 @@ export class HaikuSuggestionEnhancer implements ISuggestionEnhancer {
         places: candidates.map((c) => ({
           placeId: c.placeId,
           name: c.name,
-          category: c.category,
-          subcategory: c.subcategory,
           distanceMeters: c.distanceMeters,
           userRatingCount: c.userRatingCount,
         })),

@@ -6,13 +6,14 @@ import type {
 } from '../lib/places'
 
 function fakeCandidate(
-  over: Partial<PlaceCandidate> & Pick<PlaceCandidate, 'placeId' | 'category'>,
+  over: Partial<PlaceCandidate> & Pick<PlaceCandidate, 'placeId'>,
 ): PlaceCandidate {
   return {
-    name: `Lugar ${over.category}`,
+    name: `Lugar ${over.placeId}`,
     latitude: -25.4,
     longitude: -49.3,
-    subcategory: null,
+    // Tipo social por padrão (passa o filtro de venue), sobrescrevível por cenário.
+    types: ['bar'],
     address: null,
     rating: null,
     userRatingCount: null,
@@ -45,7 +46,6 @@ export class FakePlacesService implements IPlacesClient {
     return params.categories.map((category, i) =>
       fakeCandidate({
         placeId: `fake_${category}`,
-        category,
         latitude: params.latitude + i * 0.0001,
         longitude: params.longitude + i * 0.0001,
         distanceMeters: i * 100,
@@ -57,13 +57,11 @@ export class FakePlacesService implements IPlacesClient {
     this.calls++
     this.lastText = params
     if (this.override) return this.override(params)
-    // Determinístico: um candidato "de texto" rotulado como OTHER (a Text Search
-    // não deriva de categoria de perfil).
+    // Determinístico: um candidato "de texto" com tipo social (passa o filtro).
     return [
       fakeCandidate({
         placeId: `fake_text_${params.textQuery}`,
         name: `Resultado: ${params.textQuery}`,
-        category: 'OTHER',
         latitude: params.latitude,
         longitude: params.longitude,
       }),
