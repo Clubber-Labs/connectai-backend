@@ -69,6 +69,7 @@ describe('emissão de sessão com refresh token', () => {
         password: 'senha123',
         phone: `1199${suffix}0`,
         birthdate: '2000-01-01',
+        preferredCategories: ['MUSIC', 'ART'],
       },
     })
     expect(res.statusCode).toBe(201)

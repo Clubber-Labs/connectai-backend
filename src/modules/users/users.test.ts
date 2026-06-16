@@ -347,6 +347,7 @@ describe('POST /users — conflitos de unique constraint', () => {
         email: 'duplicado@exemplo.com',
         password: 'senha12345',
         birthdate: '2000-01-01T00:00:00.000Z',
+        preferredCategories: ['MUSIC', 'ART'],
       },
     })
 
@@ -414,6 +415,45 @@ describe('preferredCategories no perfil', () => {
     expect(res.statusCode).toBe(400)
   })
 
+  it('POST /users com menos de 2 categorias retorna 400', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/users',
+      payload: {
+        name: 'Pedro',
+        lastname: 'Lima',
+        username: 'pedrolima',
+        phone: '11933332222',
+        email: 'pedro@exemplo.com',
+        password: 'senha12345',
+        birthdate: '2000-01-01T00:00:00.000Z',
+        preferredCategories: ['MUSIC'],
+      },
+    })
+
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('POST /users dedup: categorias repetidas não burlam o mínimo de 2', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/users',
+      payload: {
+        name: 'Lara',
+        lastname: 'Reis',
+        username: 'larareis',
+        phone: '11922221111',
+        email: 'lara@exemplo.com',
+        password: 'senha12345',
+        birthdate: '2000-01-01T00:00:00.000Z',
+        // 2 itens, mas 1 categoria distinta → rejeitado.
+        preferredCategories: ['MUSIC', 'MUSIC'],
+      },
+    })
+
+    expect(res.statusCode).toBe(400)
+  })
+
   it('PUT /users/:id substitui as preferências (semântica PUT)', async () => {
     const user = await makeUser()
     await testPrisma.userCategoryPreference.createMany({
@@ -441,10 +481,13 @@ describe('preferredCategories no perfil', () => {
     expect(rows.map((r) => r.category).sort()).toEqual(['ART', 'TECH'])
   })
 
-  it('PUT /users/:id com array vazio limpa as preferências', async () => {
+  it('PUT /users/:id rejeita menos de 2 categorias (perfil nunca vazio)', async () => {
     const user = await makeUser()
-    await testPrisma.userCategoryPreference.create({
-      data: { userId: user.id, category: 'MUSIC' },
+    await testPrisma.userCategoryPreference.createMany({
+      data: [
+        { userId: user.id, category: 'MUSIC' },
+        { userId: user.id, category: 'ART' },
+      ],
     })
 
     const res = await app.inject({
@@ -454,12 +497,12 @@ describe('preferredCategories no perfil', () => {
       payload: { preferredCategories: [] },
     })
 
-    expect(res.statusCode).toBe(200)
-    expect(res.json().preferredCategories).toEqual([])
+    // Não dá pra limpar/reduzir abaixo de 2 — a validação barra antes do service.
+    expect(res.statusCode).toBe(400)
     const count = await testPrisma.userCategoryPreference.count({
       where: { userId: user.id },
     })
-    expect(count).toBe(0)
+    expect(count).toBe(2)
   })
 
   it('PUT /users/:id sem preferredCategories não altera as existentes', async () => {
@@ -493,6 +536,7 @@ describe('preferredSubcategories no perfil', () => {
         email: 'bianca@exemplo.com',
         password: 'senha12345',
         birthdate: '2000-01-01T00:00:00.000Z',
+        preferredCategories: ['GASTRONOMY', 'MUSIC'],
         preferredSubcategories: ['GASTRONOMY_JAPONESA', 'GENRE_FUNK'],
       },
     })
@@ -525,6 +569,8 @@ describe('preferredSubcategories no perfil', () => {
         email: 'carlos@exemplo.com',
         password: 'senha12345',
         birthdate: '2000-01-01T00:00:00.000Z',
+        // categorias válidas: o 400 vem só da subcategoria inválida.
+        preferredCategories: ['MUSIC', 'ART'],
         preferredSubcategories: ['NAO_EXISTE'],
       },
     })
