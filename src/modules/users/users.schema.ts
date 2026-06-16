@@ -30,7 +30,18 @@ export const createUserSchema = z.object({
     .optional(),
   isPrivate: z.boolean().default(false),
   birthdate: z.coerce.date(),
-  preferredCategories: z.array(selectableCategorySchema).max(10).optional(),
+  // Perfil mínimo de rolê: ao menos 2 categorias DISTINTAS, obrigatórias — todo
+  // perfil nasce com sinal pra recomendação (sem perfil vazio). O dedup roda
+  // ANTES da contagem, então categorias repetidas não burlam o mínimo. No update
+  // (updateUserSchema é .partial()) o campo é opcional, mas se enviado a regra
+  // continua valendo: não dá pra reduzir abaixo de 2 nem limpar para [].
+  preferredCategories: z
+    .array(selectableCategorySchema)
+    .max(10)
+    .transform((list) => Array.from(new Set(list)))
+    .refine((list) => list.length >= 2, {
+      message: 'Escolha ao menos 2 categorias de rolê',
+    }),
   // Interesses do 2º nível (subcategorias de venue + gêneros) — refinam o perfil.
   // Uma subcategoria implica seu pai no matching; não exige a categoria também.
   preferredSubcategories: z.array(interestSchema).max(30).optional(),
