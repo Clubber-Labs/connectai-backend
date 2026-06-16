@@ -7,15 +7,20 @@ describe('isSocialVenue', () => {
       true,
     )
     expect(
-      isSocialVenue(['restaurant', 'food', 'point_of_interest', 'establishment']),
+      isSocialVenue([
+        'restaurant',
+        'food',
+        'point_of_interest',
+        'establishment',
+      ]),
     ).toBe(true)
   })
 
   it('aceita comida-varejo social (padaria carrega o genérico "store")', () => {
     // Padaria/sorveteria sociais vêm com 'store' — não pode ser vetado.
-    expect(isSocialVenue(['bakery', 'store', 'food', 'point_of_interest'])).toBe(
-      true,
-    )
+    expect(
+      isSocialVenue(['bakery', 'store', 'food', 'point_of_interest']),
+    ).toBe(true)
     expect(
       isSocialVenue(['ice_cream_shop', 'store', 'food', 'point_of_interest']),
     ).toBe(true)
@@ -26,9 +31,9 @@ describe('isSocialVenue', () => {
       false,
     )
     expect(isSocialVenue(['beauty_salon', 'point_of_interest'])).toBe(false)
-    expect(isSocialVenue(['clothing_store', 'store', 'point_of_interest'])).toBe(
-      false,
-    )
+    expect(
+      isSocialVenue(['clothing_store', 'store', 'point_of_interest']),
+    ).toBe(false)
     expect(isSocialVenue(['university', 'point_of_interest'])).toBe(false)
     expect(isSocialVenue(['veterinary_care'])).toBe(false)
     expect(isSocialVenue(['pet_store', 'store'])).toBe(false)

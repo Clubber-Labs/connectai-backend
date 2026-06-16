@@ -4,11 +4,15 @@ import { setPlacesClient } from '../lib/places'
 import { setPushService } from '../lib/push'
 import { redis } from '../lib/redis'
 import { setStorage } from '../lib/storage'
-import { setSuggestionEnhancer } from '../lib/suggestion-ai'
+import {
+  setProfileQueryComposer,
+  setSuggestionEnhancer,
+} from '../lib/suggestion-ai'
 import { fakeEnhancer } from './fake-enhancer'
 import { fakeMailer } from './fake-mailer'
 import { fakePlaces } from './fake-places'
 import { fakePush } from './fake-push'
+import { fakeQueryComposer } from './fake-query-composer'
 import { fakeStorage } from './fake-storage'
 import { testPrisma } from './prisma'
 
@@ -18,6 +22,7 @@ beforeAll(() => {
   setPushService(fakePush)
   setPlacesClient(fakePlaces)
   setSuggestionEnhancer(fakeEnhancer)
+  setProfileQueryComposer(fakeQueryComposer)
 })
 
 const dbUrl = process.env.DATABASE_URL ?? ''
@@ -76,6 +81,7 @@ afterEach(async () => {
   fakePush.reset()
   fakePlaces.reset()
   fakeEnhancer.reset()
+  fakeQueryComposer.reset()
   if (redis) await redis.flushdb()
 })
 
