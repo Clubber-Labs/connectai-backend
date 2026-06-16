@@ -10,7 +10,13 @@ describe('buildProfileSearchQueries', () => {
 
   it('gênero é ancorado num venue e cobre a categoria de vida noturna', () => {
     const q = buildProfileSearchQueries(['PARTY'], ['GENRE_ELETRONICA'])
-    expect(q).toEqual(['balada eletrônica'])
+    expect(q).toEqual(['balada de eletrônica'])
+  })
+
+  it('gênero com rótulo composto mantém a frase legível (âncora "balada de")', () => {
+    // "balada de pagode e samba" lê melhor que "balada pagode e samba".
+    const q = buildProfileSearchQueries(['PARTY'], ['GENRE_PAGODE_SAMBA'])
+    expect(q).toEqual(['balada de pagode e samba'])
   })
 
   it('categoria sem interesse fino vira o rótulo da categoria', () => {
@@ -29,7 +35,7 @@ describe('buildProfileSearchQueries', () => {
 
   it('gênero cobre a vida noturna, mas categoria fora dela ainda entra', () => {
     const q = buildProfileSearchQueries(['PARTY', 'GASTRONOMY'], ['GENRE_FUNK'])
-    expect(q).toEqual(['balada funk', 'Gastronomia'])
+    expect(q).toEqual(['balada de funk', 'Gastronomia'])
   })
 
   it('aplica o teto de 3 frases, priorizando as mais específicas', () => {

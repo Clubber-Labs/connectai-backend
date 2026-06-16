@@ -22,11 +22,15 @@ const GENRE_APPLIES_TO = new Map(GENRES.map((g) => [g.key, g.appliesTo]))
 /**
  * Frases de Text Search derivadas do perfil:
  * - subcategoria de venue → o rótulo (já evoca o lugar: "Pizzaria", "Cinema");
- * - gênero → ancorado num venue ("balada música eletrônica") pra não cair em
- *   loja de disco; cobre as categorias de vida noturna a que se aplica;
+ * - gênero → ancorado num venue ("balada de eletrônica") pra não cair em loja
+ *   de disco; cobre as categorias de vida noturna a que se aplica;
  * - categoria sem interesse fino escolhido → o rótulo da categoria.
  * Dedup + teto de {@link MAX_QUERIES}. Categoria com subcategoria/gênero escolhido
  * NÃO repete a frase crua da categoria (a fina já cobre).
+ *
+ * `locale` resolve os RÓTULOS (categorias/subcategorias/gêneros). A âncora de
+ * gênero ("balada de …") é fixa em pt-BR — único locale do app hoje; outro
+ * idioma exigiria uma âncora por locale (evolução, junto do searchTerm curado).
  */
 export function buildProfileSearchQueries(
   categories: EventCategory[],
@@ -41,21 +45,24 @@ export function buildProfileSearchQueries(
 
   for (const key of subcategories) {
     const [label] = interestLabels([key], locale)
-    if (!label) continue
     const parent = parentCategoryOf(key)
     if (parent) {
+      // subcategoria de venue: o rótulo já evoca o lugar.
       queries.push(label)
       covered.add(parent)
       continue
     }
     const appliesTo = GENRE_APPLIES_TO.get(key)
     if (appliesTo) {
-      queries.push(`balada ${label.toLowerCase()}`)
+      // gênero: ancorado num venue de vida noturna ("balada de funk").
+      queries.push(`balada de ${label.toLowerCase()}`)
       for (const c of appliesTo) {
         if (categories.includes(c)) covered.add(c)
       }
     }
-    // chave desconhecida (nem subcategoria nem gênero): ignorada.
+    // Chave que não é subcategoria de venue nem gênero não casa nenhuma branch
+    // acima → nada é empurrado (ignorada). Sem guard por label: interestLabels
+    // sempre devolve string (cai no fallback da própria chave).
   }
 
   for (const c of categories) {

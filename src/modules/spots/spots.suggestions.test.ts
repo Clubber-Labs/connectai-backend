@@ -343,7 +343,7 @@ describe('POST /spots/suggestions', () => {
 
     // O gênero (ancorado num venue) passa a ser a busca — antes era ignorado
     // porque o Places não tem tipo pra estilo musical.
-    expect(fakePlaces.lastText?.textQuery).toBe('balada funk')
+    expect(fakePlaces.lastText?.textQuery).toBe('balada de funk')
     expect(fakePlaces.lastNearby).toBeNull()
   })
 
