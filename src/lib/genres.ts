@@ -55,10 +55,22 @@ const GENRE_LABELS: Record<string, Record<string, string>> = {
 
 export const GENRE_KEYS = GENRES.map((g) => g.key)
 
-export type GenreOption = { value: string; label: string }
+// `appliesTo` acompanha cada gênero no contrato para o cliente fazer o gating
+// dinâmico: a seção de gêneros (e o tagueamento de evento/spot) só vale quando
+// uma das categorias do gênero está selecionada. Evita hardcodar a regra de
+// vida noturna no app — se a taxonomia mudar, o cliente acompanha sem release.
+export type GenreOption = {
+  value: string
+  label: string
+  appliesTo: EventCategory[]
+}
 
-/** Gêneros com rótulo no locale pedido (fallback pt-BR). */
+/** Gêneros com rótulo no locale pedido (fallback pt-BR) + categorias a que se aplicam. */
 export function listGenres(locale: string = DEFAULT_LOCALE): GenreOption[] {
   const labels = GENRE_LABELS[locale] ?? GENRE_LABELS[DEFAULT_LOCALE]
-  return GENRES.map((g) => ({ value: g.key, label: labels[g.key] ?? g.key }))
+  return GENRES.map((g) => ({
+    value: g.key,
+    label: labels[g.key] ?? g.key,
+    appliesTo: g.appliesTo,
+  }))
 }

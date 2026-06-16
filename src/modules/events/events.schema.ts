@@ -1,9 +1,14 @@
 import { z } from 'zod'
 import {
+  type EventCategory,
   eventCategorySchema,
   selectableCategorySchema,
 } from '../../lib/event-categories'
 import { EVENT_STATUSES } from '../../lib/event-lifecycle'
+import {
+  interestMatchesCategories,
+  interestSchema,
+} from '../../lib/subcategories'
 import { recurrenceSchema } from '../recurring-events/recurring-events.schema'
 
 const ONE_YEAR_MS = 365 * 86_400_000
@@ -52,6 +57,32 @@ export const eventCategoriesInput = z
   .max(5, 'Máximo de 5 categorias')
   .transform((list) => Array.from(new Set(list)))
 
+// Subcategorias/gêneros que o evento POSSUI (2º nível, opcional). Chaves de
+// interesse validadas pelo enum; a coerência com `categories` (cada tag pertence
+// a uma categoria selecionada) é checada por superRefine na criação e no service
+// na edição (contra as categorias EFETIVAS). Sem duplicatas.
+export const eventSubcategoriesInput = z
+  .array(interestSchema)
+  .max(10, 'Máximo de 10 subcategorias')
+  .transform((list) => Array.from(new Set(list)))
+
+// Reusa a regra de coerência em qualquer schema que tenha categories+subcategories
+// no payload (criação de evento e de spot). Marca cada tag órfã com 400.
+export function refineSubcategoryCoherence(
+  v: { categories: EventCategory[]; subcategories?: string[] },
+  ctx: z.RefinementCtx,
+) {
+  for (const key of v.subcategories ?? []) {
+    if (!interestMatchesCategories(key, v.categories)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `A subcategoria "${key}" não pertence a nenhuma categoria selecionada`,
+        path: ['subcategories'],
+      })
+    }
+  }
+}
+
 export const createEventSchema = z
   .object({
     title: z.string().min(3),
@@ -62,12 +93,14 @@ export const createEventSchema = z
     longitude: z.number().min(-180).max(180),
     address: z.string().optional(),
     categories: eventCategoriesInput,
+    subcategories: eventSubcategoriesInput.optional(),
     isPublic: z.boolean().default(true),
     maxCapacity: z.number().optional(),
     canceledAt: z.coerce.date().optional(),
     // RF11.6: bloco opcional de recorrência (premium-only, validado no service).
     recurrence: recurrenceSchema.optional(),
   })
+  .superRefine(refineSubcategoryCoherence)
   .refine((v) => !v.endDate || v.endDate > v.date, {
     message: 'endDate deve ser depois de date',
     path: ['endDate'],
@@ -101,6 +134,10 @@ export const updateEventSchema = z
     latitude: z.number().min(-90).max(90).optional(),
     longitude: z.number().min(-180).max(180).optional(),
     categories: eventCategoriesInput.optional(),
+    // Atualização parcial: a coerência subcategoria↔categoria depende do estado
+    // EFETIVO (payload + armazenado), que o schema não enxerga — validada no
+    // editEvent service. Aqui só shape (chaves válidas, sem duplicata).
+    subcategories: eventSubcategoriesInput.optional(),
     isPublic: z.boolean().optional(),
     canceledAt: z.coerce.date().nullable().optional(),
   })

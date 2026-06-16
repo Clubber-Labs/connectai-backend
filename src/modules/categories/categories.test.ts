@@ -45,11 +45,15 @@ describe('GET /categories', () => {
     expect(values).not.toContain('RELIGION')
   })
 
-  it('expõe os gêneros musicais como dimensão à parte', async () => {
+  it('expõe os gêneros musicais como dimensão à parte, com appliesTo', async () => {
     const res = await app.inject({ method: 'GET', url: '/categories' })
     const { genres } = res.json()
-    expect(genres).toEqual(
-      expect.arrayContaining([{ value: 'GENRE_FUNK', label: 'Funk' }]),
+    const funk = genres.find((g: { value: string }) => g.value === 'GENRE_FUNK')
+    // appliesTo permite o gating dinâmico no cliente (gênero é transversal à
+    // vida noturna — PARTY/MUSIC/NIGHTLIFE — não a uma categoria só).
+    expect(funk).toMatchObject({ value: 'GENRE_FUNK', label: 'Funk' })
+    expect(funk.appliesTo).toEqual(
+      expect.arrayContaining(['PARTY', 'MUSIC', 'NIGHTLIFE']),
     )
   })
 

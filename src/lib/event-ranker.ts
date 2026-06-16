@@ -17,6 +17,15 @@ export type RankWeights = {
   categoryTop1: number
   categoryTop2: number
   categoryTop3: number
+  /**
+   * Bônus se uma SUBCATEGORIA do evento bate com o top 1/2/3 de interesses do
+   * usuário. Mais alto que o de categoria (sinal mais específico), mas combinado
+   * por `max` com ele — nunca somado — para não dar crédito dobrado ao evento que
+   * casa categoria E subcategoria.
+   */
+  subcategoryTop1: number
+  subcategoryTop2: number
+  subcategoryTop3: number
   /** Bônus pela razão social (de FeedReason). */
   reasonSelfCreated: number
   reasonFriendCreated: number
@@ -50,6 +59,10 @@ export const DEFAULT_RANK_WEIGHTS: RankWeights = {
   categoryTop1: 25,
   categoryTop2: 15,
   categoryTop3: 8,
+  // Acima dos de categoria: casar a subcategoria é um sinal de gosto mais fino.
+  subcategoryTop1: 35,
+  subcategoryTop2: 22,
+  subcategoryTop3: 12,
   reasonSelfCreated: 5,
   reasonFriendCreated: 30,
   reasonFriendAttending: 25,
@@ -75,6 +88,8 @@ export type RankReason =
 export type RankContext = {
   /** Top 3 categorias preferidas, em ordem de afinidade. */
   preferredCategories: string[]
+  /** Interesses preferidos (subcategorias/gêneros), em ordem de afinidade. */
+  preferredSubcategories: string[]
   reason: RankReason
   counts: { attendances: number; comments: number; reactions: number }
   /** Distância do usuário ao evento em metros, ou null se não há localização. */
@@ -160,6 +175,28 @@ function categorySignal(
   return 0
 }
 
+/**
+ * Sinal de subcategoria — espelha o de categoria, mas sobre as tags finas do
+ * evento × os interesses do usuário, com pesos maiores (gosto mais específico).
+ * Pontua pelo MELHOR casamento (top1/2/3); só os 3 primeiros interesses contam,
+ * alinhado ao corte do sinal de categoria.
+ */
+function subcategorySignal(
+  subcategories: string[],
+  preferred: string[],
+  weights: RankWeights,
+): number {
+  let best = Number.POSITIVE_INFINITY
+  for (const s of subcategories) {
+    const idx = preferred.indexOf(s)
+    if (idx !== -1 && idx < best) best = idx
+  }
+  if (best === 0) return weights.subcategoryTop1
+  if (best === 1) return weights.subcategoryTop2
+  if (best === 2) return weights.subcategoryTop3
+  return 0
+}
+
 function statusBoostSignal(
   event: { date: Date; endDate: Date | null; canceledAt: Date | null },
   weights: RankWeights,
@@ -197,18 +234,30 @@ export function rankEvent(
     endDate: Date | null
     canceledAt: Date | null
     categories: string[]
+    subcategories: string[]
   },
   context: RankContext,
   weights: RankWeights,
   now: Date,
 ): number {
+  // Afinidade de gosto: o MAIOR entre o casamento por categoria e por
+  // subcategoria. `max` (não soma) evita crédito dobrado quando o evento casa
+  // os dois níveis — o sinal de subcategoria, mais pesado, domina quando há tag.
+  const affinitySignal = Math.max(
+    categorySignal(event.categories, context.preferredCategories, weights),
+    subcategorySignal(
+      event.subcategories,
+      context.preferredSubcategories,
+      weights,
+    ),
+  )
   return (
     temporalSignal(event, weights, now) +
     statusBoostSignal(event, weights, now) +
     engagementSignal(context.counts, weights) +
     friendEngagementSignal(context.friendInteractionCount, weights) +
     proximitySignal(context.distanceMeters, weights) +
-    categorySignal(event.categories, context.preferredCategories, weights) +
+    affinitySignal +
     reasonSignal(context.reason, weights)
   )
 }

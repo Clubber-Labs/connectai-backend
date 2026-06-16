@@ -3,6 +3,8 @@ import {
   booleanQuery,
   categoryFilter,
   eventCategoriesInput,
+  eventSubcategoriesInput,
+  refineSubcategoryCoherence,
 } from '../events/events.schema'
 
 export const spotVisibilitySchema = z.enum(['PUBLIC', 'FRIENDS'])
@@ -12,6 +14,9 @@ export const createSpotSchema = z
     title: z.string().min(3),
     description: z.string().optional(),
     categories: eventCategoriesInput,
+    // Mesmas chaves de interesse do evento (subcategoria de venue ou gênero),
+    // coerentes com as categorias do rolê. Imutáveis depois (como o local).
+    subcategories: eventSubcategoriesInput.optional(),
     visibility: spotVisibilitySchema.default('PUBLIC'),
     // Âncora do estabelecimento (place_id do Google Places) + coordenadas.
     placeId: z.string().min(1),
@@ -20,6 +25,7 @@ export const createSpotSchema = z
     startsAt: z.coerce.date(),
     endsAt: z.coerce.date(),
   })
+  .superRefine(refineSubcategoryCoherence)
   .refine((v) => v.endsAt > v.startsAt, {
     message: 'endsAt deve ser depois de startsAt',
     path: ['endsAt'],
