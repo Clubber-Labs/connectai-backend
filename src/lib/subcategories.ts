@@ -5,7 +5,7 @@ import {
   type EventCategory,
   listCategories,
 } from './event-categories'
-import { GENRE_KEYS, listGenres } from './genres'
+import { GENRE_KEYS, GENRES, listGenres } from './genres'
 
 /**
  * Taxonomia de SUBCATEGORIAS — segundo nível abaixo de EventCategory, para
@@ -338,10 +338,31 @@ export const subcategoriesByCategory = SUBCATEGORIES.reduce<
 }, {})
 
 const SUBCATEGORY_BY_KEY = new Map(SUBCATEGORIES.map((s) => [s.key, s]))
+const GENRE_BY_KEY = new Map(GENRES.map((g) => [g.key, g]))
 
 /** Categoria pai de uma chave de subcategoria (undefined se desconhecida). */
 export function parentCategoryOf(key: string): EventCategory | undefined {
   return SUBCATEGORY_BY_KEY.get(key)?.category
+}
+
+/**
+ * Uma chave de interesse é COERENTE com um conjunto de categorias quando:
+ * - subcategoria de venue → seu pai está entre as categorias;
+ * - gênero (transversal) → ao menos uma das categorias a que ele se aplica
+ *   (PARTY/MUSIC/NIGHTLIFE) está entre as categorias.
+ * Chave desconhecida nunca é coerente. Usado pelo `.superRefine` de evento/spot:
+ * só se pode taguear um interesse que faça sentido com as categorias escolhidas
+ * (sem tags órfãs que nunca casariam no match hierárquico).
+ */
+export function interestMatchesCategories(
+  key: string,
+  categories: EventCategory[],
+): boolean {
+  const parent = parentCategoryOf(key)
+  if (parent) return categories.includes(parent)
+  const genre = GENRE_BY_KEY.get(key)
+  if (genre) return genre.appliesTo.some((c) => categories.includes(c))
+  return false
 }
 
 export type SubcategoryOption = { value: string; label: string }
