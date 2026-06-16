@@ -5,7 +5,10 @@ import {
   rankEvent,
 } from '../../lib/event-ranker'
 import { findDistancesForEvents, type LatLng } from '../../lib/spatial'
-import { findUserPreferredCategories } from '../users/users.repository'
+import {
+  findUserPreferredCategories,
+  findUserPreferredSubcategories,
+} from '../users/users.repository'
 import {
   findDiscoveryCandidateIds,
   findFollowingIds,
@@ -117,15 +120,18 @@ async function buildFeedResult(userId: string, query: FeedQuery) {
     POOL_CAP,
   )
 
-  const [followingIds, preferredCategories] = await Promise.all([
-    findFollowingIds(userId),
-    findUserPreferredCategories(userId),
-  ])
+  const [followingIds, preferredCategories, preferredSubcategories] =
+    await Promise.all([
+      findFollowingIds(userId),
+      findUserPreferredCategories(userId),
+      findUserPreferredSubcategories(userId),
+    ])
 
   const [socialIds, discoveryIds, pinCandidates] = await Promise.all([
     findSocialCandidateIds(userId, followingIds, query, poolSize, now),
     findDiscoveryCandidateIds(
       preferredCategories,
+      preferredSubcategories,
       center,
       query,
       poolSize,
@@ -179,6 +185,7 @@ async function buildFeedResult(userId: string, query: FeedQuery) {
         event,
         {
           preferredCategories,
+          preferredSubcategories,
           reason: { kind: event.reason.kind } as RankReason,
           counts: event._count,
           distanceMeters: distances.get(event.id) ?? null,

@@ -177,8 +177,9 @@ export async function findSocialCandidateIds(
 
 /**
  * IDs da pool de descoberta — eventos públicos que combinam com o perfil:
- * categorias preferidas e/ou proximidade (KNN PostGIS). Só roda quando há
- * sinal de perfil (categorias preferidas ou localização); senão retorna [].
+ * categorias/subcategorias preferidas e/ou proximidade (KNN PostGIS). Só roda
+ * quando há sinal de perfil (categoria, subcategoria preferida ou localização);
+ * senão retorna [].
  */
 // Candidatos ao slot patrocinado da 1ª página: eventos promovidos (isFeatured)
 // públicos, vivos, de OUTROS autores, respeitando os filtros do request. Poucos
@@ -208,6 +209,7 @@ export async function findPromotedPinCandidates(
 
 export async function findDiscoveryCandidateIds(
   preferredCategories: EventCategory[],
+  preferredSubcategories: string[],
   center: LatLng | null,
   query: FeedQuery,
   take: number,
@@ -220,6 +222,10 @@ export async function findDiscoveryCandidateIds(
   const discoveryOr: Prisma.EventWhereInput[] = []
   if (preferredCategories.length > 0) {
     discoveryOr.push({ categories: { hasSome: preferredCategories } })
+  }
+  // Match de 2º nível: evento taguado com um interesse que o usuário prefere.
+  if (preferredSubcategories.length > 0) {
+    discoveryOr.push({ subcategories: { hasSome: preferredSubcategories } })
   }
   if (nearIds.length > 0) {
     discoveryOr.push({ id: { in: nearIds } })

@@ -10,6 +10,7 @@ import {
   makeReaction,
   makeUser,
   makeUserCategoryPreference,
+  makeUserSubcategoryPreference,
 } from '../../test/factories'
 import { testPrisma } from '../../test/prisma'
 
@@ -946,6 +947,29 @@ describe('GET /feed — descoberta', () => {
     expect(res.statusCode).toBe(200)
     const ids = res.json().data.map((e: { id: string }) => e.id)
     expect(ids).toContain(event.id)
+  })
+
+  it('subcategoria preferida puxa evento taguado mesmo sem categoria preferida', async () => {
+    const viewer = await makeUser()
+    // Só interesse de 2º nível; nenhuma categoria preferida.
+    await makeUserSubcategoryPreference(viewer.id, 'PARTY_BALADA')
+    const stranger = await makeUser()
+    // Categoria que o viewer NÃO prefere; só a subcategoria casa.
+    const balada = await makeEvent(stranger.id, {
+      isPublic: true,
+      categories: ['OTHER'],
+      subcategories: ['PARTY_BALADA'],
+    })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/feed',
+      headers: { authorization: `Bearer ${token(app, viewer.id)}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const ids = res.json().data.map((e: { id: string }) => e.id)
+    expect(ids).toContain(balada.id)
   })
 
   it('evento de descoberta vem com reason discovery', async () => {
