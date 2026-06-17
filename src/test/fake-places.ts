@@ -1,18 +1,18 @@
 import type {
   IPlacesClient,
   PlaceCandidate,
-  SearchNearbyParams,
   SearchTextParams,
 } from '../lib/places'
 
 function fakeCandidate(
-  over: Partial<PlaceCandidate> & Pick<PlaceCandidate, 'placeId' | 'category'>,
+  over: Partial<PlaceCandidate> & Pick<PlaceCandidate, 'placeId'>,
 ): PlaceCandidate {
   return {
-    name: `Lugar ${over.category}`,
+    name: `Lugar ${over.placeId}`,
     latitude: -25.4,
     longitude: -49.3,
-    subcategory: null,
+    // Tipo social por padrão (passa o filtro de venue), sobrescrevível por cenário.
+    types: ['bar'],
     address: null,
     rating: null,
     userRatingCount: null,
@@ -25,45 +25,27 @@ function fakeCandidate(
 
 /**
  * Places fake para testes: não chama a API do Google. Devolve candidatos
- * determinísticos e conta as chamadas (`calls`, e `lastNearby`/`lastText` com os
- * params recebidos) para verificar cache hit e roteamento. Injetado via
- * setPlacesClient no setup.ts.
+ * determinísticos e conta as chamadas (`calls`, e `lastText` com os params
+ * recebidos) para verificar cache hit e roteamento. Injetado via setPlacesClient
+ * no setup.ts.
  */
 export class FakePlacesService implements IPlacesClient {
   calls = 0
-  lastNearby: SearchNearbyParams | null = null
   lastText: SearchTextParams | null = null
-  /** Sobrescreva para roteirizar o retorno da busca (Nearby ou Text) num cenário. */
+  /** Sobrescreva para roteirizar o retorno da Text Search num cenário. */
   override:
     | ((params: { latitude: number; longitude: number }) => PlaceCandidate[])
     | null = null
-
-  async searchNearby(params: SearchNearbyParams): Promise<PlaceCandidate[]> {
-    this.calls++
-    this.lastNearby = params
-    if (this.override) return this.override(params)
-    return params.categories.map((category, i) =>
-      fakeCandidate({
-        placeId: `fake_${category}`,
-        category,
-        latitude: params.latitude + i * 0.0001,
-        longitude: params.longitude + i * 0.0001,
-        distanceMeters: i * 100,
-      }),
-    )
-  }
 
   async searchText(params: SearchTextParams): Promise<PlaceCandidate[]> {
     this.calls++
     this.lastText = params
     if (this.override) return this.override(params)
-    // Determinístico: um candidato "de texto" rotulado como OTHER (a Text Search
-    // não deriva de categoria de perfil).
+    // Determinístico: um candidato "de texto" com tipo social (passa o filtro).
     return [
       fakeCandidate({
         placeId: `fake_text_${params.textQuery}`,
         name: `Resultado: ${params.textQuery}`,
-        category: 'OTHER',
         latitude: params.latitude,
         longitude: params.longitude,
       }),
@@ -72,7 +54,6 @@ export class FakePlacesService implements IPlacesClient {
 
   reset(): void {
     this.calls = 0
-    this.lastNearby = null
     this.lastText = null
     this.override = null
   }

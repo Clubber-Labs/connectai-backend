@@ -22,7 +22,7 @@ export class FakeSuggestionEnhancer implements ISuggestionEnhancer {
     return [...candidates].reverse().map((c) => ({
       ...c,
       suggestedTitle: `IA: ${c.name}`,
-      suggestedDescription: `Sugestão para ${c.category}`,
+      suggestedDescription: `Sugestão para ${c.name}`,
     }))
   }
 
