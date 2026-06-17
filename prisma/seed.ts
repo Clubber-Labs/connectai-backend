@@ -275,6 +275,8 @@ function notificationCopy(
       return { title: 'Nova curtida', body: `${who} curtiu seu evento` }
     case 'POST_REACTION':
       return { title: 'Nova curtida', body: `${who} curtiu seu post` }
+    case 'COMMENT_REACTION':
+      return { title: 'Nova curtida', body: `${who} curtiu seu comentário` }
     case 'EVENT_ATTENDANCE':
       return { title: 'Nova presença', body: `${who} vai ao seu evento` }
     default:
@@ -1232,109 +1234,184 @@ async function main() {
   }))
   await prisma.deviceToken.createMany({ data: deviceTokens })
 
-  const premiumEvents = events.filter((e) => e.authorId === premiumDemo.id)
-  const premiumPosts = posts.filter((p) => p.authorId === premiumDemo.id)
-
-  type NotifSpec = {
-    userId: string
-    type: NotificationType
-    actor: { id: string; name: string; lastname: string }
-    eventId?: string
-    postId?: string
-    read: boolean
-  }
-
-  const notifSpecs: NotifSpec[] = []
-  const notifActors = sample(randomUsers, 6)
-
-  // Caixa do premium_demo: social + interações nos próprios eventos/posts.
-  notifSpecs.push({
-    userId: premiumDemo.id,
-    type: 'NEW_FOLLOWER',
-    actor: notifActors[0],
-    read: false,
+  // Alvos reais pros deep-links das notificações. eventId/postId/commentId/
+  // spotId não têm FK no schema, mas usamos ids existentes pra o app conseguir
+  // navegar pro destino ao tocar na notificação.
+  const allComments = await prisma.comment.findMany({
+    select: { id: true, authorId: true },
   })
-  if (premiumEvents[0]) {
-    notifSpecs.push(
-      {
-        userId: premiumDemo.id,
-        type: 'EVENT_COMMENT',
-        actor: notifActors[1],
-        eventId: premiumEvents[0].id,
-        read: false,
-      },
-      {
-        userId: premiumDemo.id,
-        type: 'EVENT_ATTENDANCE',
-        actor: notifActors[2],
-        eventId: premiumEvents[0].id,
-        read: false,
-      },
-      {
-        userId: premiumDemo.id,
-        type: 'EVENT_REACTION',
-        actor: notifActors[3],
-        eventId: premiumEvents[0].id,
-        read: true,
-      },
-    )
-  }
-  if (premiumPosts[0]) {
-    notifSpecs.push(
-      {
-        userId: premiumDemo.id,
-        type: 'POST_REACTION',
-        actor: notifActors[4],
-        postId: premiumPosts[0].id,
-        read: true,
-      },
-      {
-        userId: premiumDemo.id,
-        type: 'POST_COMMENT',
-        actor: notifActors[5],
-        postId: premiumPosts[0].id,
-        read: true,
-      },
-    )
+  const allSpots = await prisma.spot.findMany({
+    select: { id: true, creatorId: true, title: true },
+  })
+
+  // Todos os 14 tipos que o app entrega hoje. Cada usuário recebe um de cada,
+  // pra exercitar a aba de notificações inteira no mobile (badge, lidas/não,
+  // avatar do ator, deep-link por tipo).
+  const NOTIF_TYPES: NotificationType[] = [
+    'NEW_FOLLOWER',
+    'FOLLOW_REQUEST',
+    'FOLLOW_ACCEPTED',
+    'EVENT_INVITE',
+    'EVENT_COMMENT',
+    'EVENT_REACTION',
+    'EVENT_ATTENDANCE',
+    'POST_COMMENT',
+    'POST_REACTION',
+    'COMMENT_REACTION',
+    'EVENT_NEARBY',
+    'SPOT_NEARBY',
+    'SPOT_JOIN',
+    'SPOT_RENEWAL',
+  ]
+
+  // Prefere um alvo do próprio recipient (a copy fala do "seu evento/post/…");
+  // sem nenhum dele, cai em qualquer um do pool. Retorna undefined se vazio.
+  function ownOrAny<T>(pool: T[], isOwn: (x: T) => boolean): T | undefined {
+    if (pool.length === 0) return undefined
+    const own = pool.filter(isOwn)
+    return own.length ? pick(own) : pick(pool)
   }
 
-  // Algumas notificações sociais (lidas e não-lidas) pra usuários aleatórios.
-  for (const recipient of sample(randomUsers, 6)) {
-    const actor = pick(randomUsers.filter((u) => u.id !== recipient.id))
-    notifSpecs.push({
-      userId: recipient.id,
-      type: 'NEW_FOLLOWER',
-      actor,
-      read: faker.datatype.boolean(),
-    })
-  }
+  const notifications: Prisma.NotificationCreateManyInput[] = []
+  let notifSeq = 0
+  for (const recipient of users) {
+    for (const type of NOTIF_TYPES) {
+      // Ator: qualquer outro usuário. Proximidade/renovação não têm ator.
+      const actor = pick(randomUsers.filter((u) => u.id !== recipient.id))
+      const who = [actor.name, actor.lastname].filter(Boolean).join(' ')
+      const actorData = {
+        id: actor.id,
+        name: actor.name,
+        lastname: actor.lastname,
+        username: actor.username,
+        avatarUrl: actor.avatarUrl,
+      }
 
-  const notifications: Prisma.NotificationCreateManyInput[] = notifSpecs.map(
-    (spec, i) => {
-      const who = [spec.actor.name, spec.actor.lastname]
-        .filter(Boolean)
-        .join(' ')
-      const { title, body } = notificationCopy(spec.type, who)
-      const target = spec.eventId ?? spec.postId ?? 'social'
-      return {
-        userId: spec.userId,
-        type: spec.type,
-        actorId: spec.actor.id,
-        eventId: spec.eventId ?? null,
-        postId: spec.postId ?? null,
+      let actorId: string | null = actor.id
+      let eventId: string | null = null
+      let postId: string | null = null
+      let commentId: string | null = null
+      let spotId: string | null = null
+      let title: string
+      let body: string
+      // Sociais carregam data.actor (avatar + nome); proximidade/spot espelham
+      // o payload de produção (só ids do alvo).
+      let data: Prisma.InputJsonValue = { actor: actorData }
+
+      switch (type) {
+        case 'EVENT_INVITE': {
+          // Convite pra evento de outra pessoa — qualquer evento do pool.
+          eventId = pick(events).id
+          ;({ title, body } = notificationCopy(type, who))
+          break
+        }
+        case 'EVENT_COMMENT':
+        case 'EVENT_REACTION':
+        case 'EVENT_ATTENDANCE': {
+          eventId =
+            ownOrAny(events, (e) => e.authorId === recipient.id)?.id ?? null
+          ;({ title, body } = notificationCopy(type, who))
+          break
+        }
+        case 'POST_COMMENT':
+        case 'POST_REACTION': {
+          postId =
+            ownOrAny(posts, (p) => p.authorId === recipient.id)?.id ?? null
+          ;({ title, body } = notificationCopy(type, who))
+          break
+        }
+        case 'COMMENT_REACTION': {
+          commentId =
+            ownOrAny(allComments, (c) => c.authorId === recipient.id)?.id ??
+            null
+          ;({ title, body } = notificationCopy(type, who))
+          break
+        }
+        case 'EVENT_NEARBY': {
+          const ev = pick(events)
+          eventId = ev.id
+          actorId = null
+          title = 'Tem evento perto de você'
+          body = ev.title
+          data = { eventId: ev.id }
+          break
+        }
+        case 'SPOT_NEARBY': {
+          const sp = pick(allSpots)
+          spotId = sp.id
+          actorId = null
+          title = 'Tem rolê perto de você'
+          body = sp.title
+          data = { spotId: sp.id }
+          break
+        }
+        case 'SPOT_JOIN': {
+          const sp =
+            ownOrAny(allSpots, (s) => s.creatorId === recipient.id) ??
+            pick(allSpots)
+          spotId = sp.id
+          title = 'Novo membro no rolê'
+          body = `${who} entrou em "${sp.title}"`
+          data = { spotId: sp.id, actorId: actor.id }
+          break
+        }
+        case 'SPOT_RENEWAL': {
+          const sp =
+            ownOrAny(allSpots, (s) => s.creatorId === recipient.id) ??
+            pick(allSpots)
+          spotId = sp.id
+          actorId = null
+          title = 'Seu rolê está acabando'
+          body = `"${sp.title}" expira em breve — renove por mais 24h`
+          data = { spotId: sp.id }
+          break
+        }
+        default: {
+          // Sociais sem alvo: NEW_FOLLOWER, FOLLOW_REQUEST, FOLLOW_ACCEPTED.
+          ;({ title, body } = notificationCopy(type, who))
+        }
+      }
+
+      // Escalona nas últimas ~72h; lidas têm readAt DEPOIS do createdAt (e nunca
+      // no futuro) — caixa realista de lidas/não-lidas, sem ler antes de criar.
+      const createdAt = new Date(
+        nowMs - faker.number.int({ min: 5, max: 72 * 60 }) * 60_000,
+      )
+      const readAt = faker.datatype.boolean()
+        ? new Date(
+            Math.min(
+              createdAt.getTime() +
+                faker.number.int({ min: 1, max: 90 }) * 60_000,
+              nowMs,
+            ),
+          )
+        : null
+
+      const target = eventId ?? postId ?? commentId ?? spotId ?? 'social'
+      notifications.push({
+        userId: recipient.id,
+        type,
+        actorId,
+        eventId,
+        postId,
+        commentId,
+        spotId,
         title,
         body,
-        dedupeKey: `${spec.type}:${spec.actor.id}:${target}:${i}`,
-        readAt: spec.read
-          ? new Date(nowMs - faker.number.int({ min: 1, max: 40 }) * 60_000)
-          : null,
-      }
-    },
-  )
+        data,
+        // notifSeq garante unicidade global do (userId, dedupeKey).
+        dedupeKey: `${type}:${actorId ?? 'sys'}:${target}:${notifSeq++}`,
+        createdAt,
+        readAt,
+      })
+    }
+  }
+
   await prisma.notification.createMany({ data: notifications })
   const unreadCount = notifications.filter((n) => n.readAt === null).length
   console.log(
-    `   ✓ ${deviceTokens.length} device tokens, ${notifications.length} notificações (${unreadCount} não-lidas)`,
+    `   ✓ ${deviceTokens.length} device tokens, ${notifications.length} notificações ` +
+      `(${unreadCount} não-lidas) — ${NOTIF_TYPES.length} tipos × ${users.length} usuários`,
   )
 
   // ── 16. Consentimento LGPD (granular + auditoria) ────────────────────────────
