@@ -63,7 +63,9 @@ export type ProximityScan = {
  * Pré-filtro `ST_DWithin` com raio MÁXIMO constante usa o índice GiST
  * (users_location_idx) e corta a tabela; o refino por linha
  * (`ST_Distance <= notifyRadiusKm*1000 + meia-diagonal`) roda só sobre os
- * candidatos — padrão "filtro na camada certa" do CLAUDE.md. Demais predicados:
+ * candidatos — padrão "filtro na camada certa" do CLAUDE.md. ST_DWithin e
+ * ST_Distance usam use_spheroid=false (esfera, não esferoide): ~0,3% de erro,
+ * absorvido pela folga da meia-diagonal, e bem mais barato de CPU. Demais predicados:
  * freshness (TTL), consentimento (push + locationPrecise, não revogado),
  * preferência de 2 níveis (o usuário prefere AO MENOS UMA categoria OU
  * subcategoria do evento — ver preferenceMatch), conta ativa, não-autor e sem
@@ -83,8 +85,8 @@ export async function findUsersToNotifyNearEvent(
     FROM users u
     JOIN user_consents c ON c."userId" = u.id
     WHERE u.location IS NOT NULL
-      AND ST_DWithin(u.location, ${point}, ${scan.maxRadiusKm * 1000})
-      AND ST_Distance(u.location, ${point}) <= u."notifyRadiusKm" * 1000 + ${CELL_HALF_DIAGONAL_M}
+      AND ST_DWithin(u.location, ${point}, ${scan.maxRadiusKm * 1000}, false)
+      AND ST_Distance(u.location, ${point}, false) <= u."notifyRadiusKm" * 1000 + ${CELL_HALF_DIAGONAL_M}
       AND u."locationUpdatedAt" > now() - (${scan.ttlDays} * interval '1 day')
       AND u."accountStatus" = 'ACTIVE'
       AND u.id <> ${target.authorId}
@@ -150,8 +152,8 @@ export async function findUsersToNotifyNearSpot(
     FROM users u
     JOIN user_consents c ON c."userId" = u.id
     WHERE u.location IS NOT NULL
-      AND ST_DWithin(u.location, ${point}, ${scan.maxRadiusKm * 1000})
-      AND ST_Distance(u.location, ${point}) <= u."notifyRadiusKm" * 1000 + ${CELL_HALF_DIAGONAL_M}
+      AND ST_DWithin(u.location, ${point}, ${scan.maxRadiusKm * 1000}, false)
+      AND ST_Distance(u.location, ${point}, false) <= u."notifyRadiusKm" * 1000 + ${CELL_HALF_DIAGONAL_M}
       AND u."locationUpdatedAt" > now() - (${scan.ttlDays} * interval '1 day')
       AND u."accountStatus" = 'ACTIVE'
       AND u.id <> ${target.authorId}

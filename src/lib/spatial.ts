@@ -10,6 +10,11 @@ export type Bbox = {
 
 export type LatLng = { latitude: number; longitude: number }
 
+// As queries usam ST_DWithin/ST_Distance com use_spheroid=false (último arg):
+// distância sobre a esfera, não o esferoide WGS84. ~0,3% de erro vs spheroid —
+// irrelevante para descoberta/ordenação de eventos por proximidade — e bem mais
+// barato de CPU (o cálculo geodésico no esferoide é o gargalo dessas queries).
+
 /**
  * Predicado SQL de visibilidade aplicado dentro das queries espaciais.
  * Filtra antes do LIMIT/ORDER para garantir que o cap espacial nunca
@@ -53,7 +58,8 @@ export async function findEventIdsWithinRadius(
         AND ST_DWithin(
           e.location,
           ST_SetSRID(ST_MakePoint(${center.longitude}, ${center.latitude}), 4326)::geography,
-          ${radiusMeters}
+          ${radiusMeters},
+          false
         )
     `,
   )
@@ -72,7 +78,7 @@ export async function findDistancesForEvents(
   const point = Prisma.sql`ST_SetSRID(ST_MakePoint(${center.longitude}, ${center.latitude}), 4326)::geography`
   const rows = await prisma.$queryRaw<{ id: string; distance: number }[]>(
     Prisma.sql`
-      SELECT e.id, ST_Distance(e.location, ${point}) AS distance
+      SELECT e.id, ST_Distance(e.location, ${point}, false) AS distance
       FROM events e
       WHERE e.id IN (${Prisma.join(eventIds)})
     `,
@@ -88,7 +94,7 @@ export async function findEventIdsByDistance(
   const point = Prisma.sql`ST_SetSRID(ST_MakePoint(${center.longitude}, ${center.latitude}), 4326)::geography`
   const whereRadius =
     radiusKm !== undefined
-      ? Prisma.sql`AND ST_DWithin(e.location, ${point}, ${radiusKm * 1000})`
+      ? Prisma.sql`AND ST_DWithin(e.location, ${point}, ${radiusKm * 1000}, false)`
       : Prisma.empty
   const rows = await prisma.$queryRaw<{ id: string }[]>(
     Prisma.sql`
