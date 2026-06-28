@@ -22,6 +22,7 @@ import {
 import { testPrisma } from '../../test/prisma'
 import {
   findConversationPartnerIds,
+  findTypingRecipientUserIds,
   markDeliveredIfBehind,
 } from './chat.repository'
 
@@ -1954,6 +1955,38 @@ describe('presença respeita bloqueio (findConversationPartnerIds)', () => {
     const afterB = await findConversationPartnerIds(memberB.id)
     expect(afterB).not.toContain(owner.id)
     expect(afterB).toContain(memberA.id)
+  })
+})
+
+describe('typing respeita bloqueio (findTypingRecipientUserIds)', () => {
+  it('exclui quem bloqueou o remetente do fan-out de typing', async () => {
+    const sender = await makeUser()
+    const memberA = await makeUser()
+    const blocker = await makeUser()
+    const convo = await makeGroupConversation(sender.id, [memberA.id, blocker.id])
+
+    await makeBlock(blocker.id, sender.id)
+
+    const recipients = await findTypingRecipientUserIds(convo.id, sender.id)
+
+    expect(recipients).toContain(sender.id) // remetente sempre presente (anti-spoof guard)
+    expect(recipients).toContain(memberA.id)
+    expect(recipients).not.toContain(blocker.id)
+  })
+
+  it('exclui quem o remetente bloqueou do fan-out de typing', async () => {
+    const sender = await makeUser()
+    const memberA = await makeUser()
+    const blockedBySender = await makeUser()
+    const convo = await makeGroupConversation(sender.id, [memberA.id, blockedBySender.id])
+
+    await makeBlock(sender.id, blockedBySender.id)
+
+    const recipients = await findTypingRecipientUserIds(convo.id, sender.id)
+
+    expect(recipients).toContain(sender.id)
+    expect(recipients).toContain(memberA.id)
+    expect(recipients).not.toContain(blockedBySender.id)
   })
 })
 
