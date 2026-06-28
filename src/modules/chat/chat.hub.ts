@@ -157,6 +157,25 @@ export function isTokenExpired(
 }
 
 /**
+ * Motivo para encerrar uma sessão WS JÁ estabelecida na revalidação periódica,
+ * ou null se a sessão segue válida. O WS é uma sessão persistente, então — ao
+ * contrário do REST, que checa a cada request — precisa revalidar de tempos em
+ * tempos: o handshake barra quem JÁ estava punido, mas um ban aplicado DEPOIS da
+ * conexão também deve derrubá-la (senão o banido opera até o JWT expirar). A
+ * checagem da denylist é lazy (só consulta o Redis se o token não expirou) e
+ * injetável, pra testar sem Redis.
+ */
+export async function sessionCloseReason(
+  claims: { exp?: number },
+  nowSeconds: number,
+  checkBlocked: () => Promise<boolean>,
+): Promise<'token expired' | 'account suspended' | null> {
+  if (isTokenExpired(claims, nowSeconds)) return 'token expired'
+  if (await checkBlocked()) return 'account suspended'
+  return null
+}
+
+/**
  * Traduz um evento do Redis no(s) frame(s) entregue(s) aos sockets locais.
  * `typing`/`presence` nunca voltam pro próprio autor. Retorna o nº de envios.
  */

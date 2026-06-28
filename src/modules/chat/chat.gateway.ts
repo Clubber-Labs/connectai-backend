@@ -1,13 +1,14 @@
 import type { WebSocket } from '@fastify/websocket'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
+import { isBlocked } from '../../lib/moderation-denylist'
 import { CHAT_CHANNEL, type RealtimeEvent, realtime } from '../../lib/realtime'
 import { redis } from '../../lib/redis'
 import { authenticateWsToken } from '../../lib/ws-auth'
 import {
   createSocketRegistry,
   dispatchEvent,
-  isTokenExpired,
   localDeliveryRecipients,
+  sessionCloseReason,
 } from './chat.hub'
 import {
   findActiveParticipantUserIds,
@@ -188,12 +189,21 @@ export async function chatGateway(app: FastifyInstance) {
         }
       }, HEARTBEAT_MS)
 
-      // Revalida o JWT: fecha a sessão quando o token expira.
+      // Revalida a sessão periodicamente (o WS é persistente; espelha o REST que
+      // checa a cada request): fecha quando o JWT expira OU quando a conta entra
+      // na denylist de moderação DEPOIS do handshake (ban/suspensão em sessão).
       const tokenCheck = setInterval(() => {
-        if (isTokenExpired(claims, Math.floor(Date.now() / 1000))) {
-          log.info({ userId }, 'token expirado; fechando socket')
-          socket.close(4401, 'token expired')
-        }
+        void (async () => {
+          const reason = await sessionCloseReason(
+            claims,
+            Math.floor(Date.now() / 1000),
+            () => isBlocked(userId),
+          )
+          if (reason) {
+            log.info({ userId, reason }, 'encerrando socket na revalidação')
+            socket.close(4401, reason)
+          }
+        })()
       }, TOKEN_RECHECK_MS)
 
       socket.on('message', (raw: Buffer) => {

@@ -10,6 +10,7 @@ import {
   messageFrame,
   presenceFrame,
   receiptFrame,
+  sessionCloseReason,
   typingFrame,
   WS_OPEN,
 } from './chat.hub'
@@ -221,6 +222,31 @@ describe('isTokenExpired', () => {
   })
   it('false quando não há exp (sem expiração)', () => {
     expect(isTokenExpired({}, 2000)).toBe(false)
+  })
+})
+
+describe('sessionCloseReason — revalidação periódica da sessão WS', () => {
+  const never = async () => false
+  const always = async () => true
+
+  it('token expirado → "token expired", sem consultar a denylist (lazy)', async () => {
+    let consulted = false
+    const reason = await sessionCloseReason({ exp: 1000 }, 2000, async () => {
+      consulted = true
+      return false
+    })
+    expect(reason).toBe('token expired')
+    expect(consulted).toBe(false) // short-circuit: não toca no Redis se expirou
+  })
+
+  it('conta entra na denylist após o handshake → "account suspended"', async () => {
+    expect(await sessionCloseReason({ exp: 3000 }, 2000, always)).toBe(
+      'account suspended',
+    )
+  })
+
+  it('sessão válida e não bloqueada → null (mantém aberta)', async () => {
+    expect(await sessionCloseReason({ exp: 3000 }, 2000, never)).toBeNull()
   })
 })
 
