@@ -391,3 +391,50 @@ describe('revogação cruzada', () => {
     expect(after.statusCode).toBe(401)
   })
 })
+
+describe('POST /auth/refresh — conta punida não renova sessão (F-13)', () => {
+  // Token criado direto (makeRefreshToken), sem login: conta punida nem loga,
+  // então a defesa precisa valer no caminho de refresh, lendo o accountStatus
+  // do banco (independe da denylist do Redis).
+  it('conta BANNED: 401 e revoga TODA a família de refresh tokens', async () => {
+    const user = await makeUser({ accountStatus: 'BANNED' })
+    const { raw } = await makeRefreshToken(user.id)
+    // Segunda sessão ativa: prova que a família inteira cai, não só o apresentado.
+    await makeRefreshToken(user.id)
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/refresh',
+      body: { refreshToken: raw },
+    })
+    expect(res.statusCode).toBe(401)
+
+    const active = await testPrisma.refreshToken.count({
+      where: { userId: user.id, revokedAt: null },
+    })
+    expect(active).toBe(0)
+  })
+
+  it('conta SUSPENDED vigente: 401 e revoga a família', async () => {
+    const user = await makeUser({
+      accountStatus: 'SUSPENDED',
+      suspendedAt: new Date(),
+      suspendedUntil: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      suspensionReason: 'Spam',
+    })
+    const { raw } = await makeRefreshToken(user.id)
+    await makeRefreshToken(user.id)
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/refresh',
+      body: { refreshToken: raw },
+    })
+    expect(res.statusCode).toBe(401)
+
+    const active = await testPrisma.refreshToken.count({
+      where: { userId: user.id, revokedAt: null },
+    })
+    expect(active).toBe(0)
+  })
+})
