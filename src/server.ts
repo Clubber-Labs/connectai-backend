@@ -82,6 +82,13 @@ const app = fastify({
   // a validação fique centralizada no genReqId.
   genReqId,
   requestIdHeader: false,
+  // trustProxy resolve o request.ip (usado pelo rate-limit) a partir do
+  // X-Forwarded-For SÓ quando a conexão vem de um proxy listado em
+  // TRUSTED_PROXIES (LB/Nginx/Cloudflare em prod). Sem isso, atrás de um proxy o
+  // rate-limit viraria um balde global (todos com o IP do proxy); confiar
+  // cegamente no XFF (trustProxy:true) deixaria um atacante forjar o IP e furar
+  // o limite. Vazio (dev/sem proxy) = false = usa o IP do socket (inalterado).
+  trustProxy: env.TRUSTED_PROXIES || false,
   // Opções compartilhadas com o logger standalone (lib/logger) — redaction,
   // serializers e destino (stdout/pretty/Loki) num único lugar, sem drift.
   logger: buildLoggerOptions(),
