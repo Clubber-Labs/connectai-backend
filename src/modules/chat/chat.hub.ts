@@ -175,6 +175,39 @@ export async function sessionCloseReason(
   return null
 }
 
+// Teto de frames inbound processados por socket numa janela (anti-flood). Cada
+// frame de chat dispara query + publish; sem teto, um socket pode martelar o DB
+// e o Redis. Sinais que o cliente envia são de baixa frequência ("typing"), então
+// 10/seg é folgado para uso real e corta o flood. Combina com o cap de conexões.
+export const MAX_INBOUND_FRAMES_PER_WINDOW = 10
+export const INBOUND_FRAME_WINDOW_MS = 1000
+
+/**
+ * Throttle de janela fixa, por socket, puro e sem I/O (testável com clock fake).
+ * `allow()` retorna false quando o socket excedeu o teto na janela atual — o
+ * gateway descarta o frame ANTES de qualquer query/publish.
+ */
+export function createFrameThrottle(
+  maxPerWindow: number = MAX_INBOUND_FRAMES_PER_WINDOW,
+  windowMs: number = INBOUND_FRAME_WINDOW_MS,
+  now: () => number = Date.now,
+) {
+  let windowStart = now()
+  let count = 0
+  return {
+    allow(): boolean {
+      const t = now()
+      if (t - windowStart >= windowMs) {
+        windowStart = t
+        count = 0
+      }
+      if (count >= maxPerWindow) return false
+      count++
+      return true
+    },
+  }
+}
+
 /**
  * Traduz um evento do Redis no(s) frame(s) entregue(s) aos sockets locais.
  * `typing`/`presence` nunca voltam pro próprio autor. Retorna o nº de envios.
