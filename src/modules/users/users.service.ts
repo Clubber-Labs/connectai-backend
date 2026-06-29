@@ -112,11 +112,30 @@ export async function getUserById(id: string, viewerId?: string) {
 
   const { _count, ...rest } = user
 
-  const follow =
-    viewerId && viewerId !== id ? await findFollow(viewerId, id) : null
+  const isSelf = viewerId === id
+  const follow = viewerId && !isSelf ? await findFollow(viewerId, id) : null
   const followStatus = follow?.status ?? null
 
+  // Privacy gate (paridade com searchUsers): conta privada vista por quem não é
+  // o dono nem follower ACCEPTED só recebe o card mínimo — sem bio, contadores,
+  // createdAt nem preferências. `kind` discrimina as variantes pro client, igual
+  // ao searchUsers. Como a rota é authenticateOptional, viewer anônimo cai aqui.
+  const hidePrivate = rest.isPrivate && !isSelf && followStatus !== 'ACCEPTED'
+  if (hidePrivate) {
+    return {
+      kind: 'reduced' as const,
+      id: rest.id,
+      username: rest.username,
+      name: rest.name,
+      lastname: rest.lastname,
+      avatarUrl: rest.avatarUrl,
+      isPrivate: true as const,
+      followStatus,
+    }
+  }
+
   return {
+    kind: 'full' as const,
     ...withPreferredCategories(rest),
     eventsCount: _count.events,
     followStatus,
