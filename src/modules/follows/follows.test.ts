@@ -165,7 +165,6 @@ describe('POST /users/me/follow-requests/:followerId/accept', () => {
       headers: { authorization: `Bearer ${token(app, user.id)}` },
     })
 
-    // controller retorna 204 sem body
     expect(res.statusCode).toBe(204)
   })
 })

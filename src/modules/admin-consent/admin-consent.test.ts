@@ -23,8 +23,6 @@ afterAll(async () => {
   await app.close()
   await testPrisma.$disconnect()
 })
-
-// ────────────────────────────────────────────────────────────────────────────
 describe('GET /admin/consent/audit', () => {
   it('retorna 401 sem autenticação', async () => {
     const res = await app.inject({ method: 'GET', url: '/admin/consent/audit' })
@@ -134,7 +132,6 @@ describe('GET /admin/consent/audit', () => {
   })
 })
 
-// ────────────────────────────────────────────────────────────────────────────
 describe('GET /admin/consent/audit/:userId', () => {
   it('retorna 401 sem autenticação', async () => {
     const user = await makeUser()
@@ -187,7 +184,6 @@ describe('GET /admin/consent/audit/:userId', () => {
   })
 })
 
-// ────────────────────────────────────────────────────────────────────────────
 describe('GET /admin/consent/stats', () => {
   it('retorna 401 sem autenticação', async () => {
     const res = await app.inject({ method: 'GET', url: '/admin/consent/stats' })

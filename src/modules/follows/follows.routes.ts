@@ -26,7 +26,6 @@ export async function followsRoutes(app: FastifyInstance) {
 
   const api = app.withTypeProvider<ZodTypeProvider>()
 
-  // Seguir um usuário
   api.post(
     '/users/:userId/follow',
     {
@@ -36,7 +35,6 @@ export async function followsRoutes(app: FastifyInstance) {
     postFollow,
   )
 
-  // Deixar de seguir um usuário
   api.delete(
     '/users/:userId/follow',
     {
@@ -72,7 +70,6 @@ export async function followsRoutes(app: FastifyInstance) {
     getFollowing,
   )
 
-  // Remover um seguidor da própria lista
   api.delete(
     '/users/me/followers/:followerId',
     {
@@ -82,7 +79,6 @@ export async function followsRoutes(app: FastifyInstance) {
     deleteFollower,
   )
 
-  // Listar solicitações de follow pendentes do usuário autenticado
   api.get(
     '/users/me/follow-requests',
     {
@@ -92,7 +88,6 @@ export async function followsRoutes(app: FastifyInstance) {
     getPendingRequests,
   )
 
-  // Aceitar solicitação de follow
   api.post(
     '/users/me/follow-requests/:followerId/accept',
     {
@@ -102,7 +97,6 @@ export async function followsRoutes(app: FastifyInstance) {
     postApproveFollow,
   )
 
-  // Rejeitar solicitação de follow
   api.delete(
     '/users/me/follow-requests/:followerId',
     {

@@ -69,8 +69,6 @@ afterAll(async () => {
   await testPrisma.$disconnect()
 })
 
-// ─── Fixtures de eventos Stripe (usadas nos testes de webhook) ───────────────
-
 function checkoutSessionCompletedFixture(opts: {
   userId: string
   customerId: string
@@ -240,8 +238,6 @@ function stripeSubscriptionObject(opts: {
     // biome-ignore lint/suspicious/noExplicitAny: fixture de payload Stripe
   } as any
 }
-
-// ─── Repository ──────────────────────────────────────────────────────────────
 
 describe('repository', () => {
   describe('findActiveSubscriptionByUserId', () => {
@@ -692,8 +688,6 @@ describe('repository', () => {
     })
   })
 })
-
-// ─── Service ─────────────────────────────────────────────────────────────────
 
 describe('service', () => {
   describe('createCheckoutSession', () => {
@@ -1268,8 +1262,6 @@ describe('service', () => {
   })
 })
 
-// ─── Webhook ─────────────────────────────────────────────────────────────────
-
 describe('processStripeWebhook', () => {
   describe('signing', () => {
     it('lança 400 quando assinatura inválida', async () => {
@@ -1747,11 +1739,9 @@ describe('processStripeWebhook', () => {
   })
 })
 
-// ─── Routes E2E (via app.inject) ─────────────────────────────────────────────
 // Cobre o wiring HTTP que os testes de service/webhook não exercem:
 // autenticação (preHandler de auth), rate-limit (config da rota) e propagação
 // do rawBody pro handler do webhook (plugin escopado em billingWebhookRoutes).
-
 describe('routes E2E', () => {
   let app: FastifyInstance
 

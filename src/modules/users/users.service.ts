@@ -361,7 +361,6 @@ export async function changeUserAvatar(
   }
 }
 
-// ── Moderação (suspensão/banimento) ──────────────────────────────────────────
 // Os endpoints chamadores já passam por assertAdmin; estas funções garantem as
 // invariantes do alvo e mantêm a denylist Redis em sincronia com o banco.
 
