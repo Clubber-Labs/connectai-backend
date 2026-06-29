@@ -131,6 +131,19 @@ if (env.RATE_LIMIT_ENABLED) {
   )
 }
 
+// Mesma rede de segurança para o trustProxy: em produção atrás de um proxy, sem
+// TRUSTED_PROXIES o request.ip vira o IP do proxy e o rate-limit degrada para um
+// balde global por proxy — silenciosamente. Avisa para o operador setar a env.
+if (
+  env.NODE_ENV === 'production' &&
+  env.RATE_LIMIT_ENABLED &&
+  !env.TRUSTED_PROXIES
+) {
+  app.log.warn(
+    'TRUSTED_PROXIES não configurado em produção — atrás de um proxy o rate-limit usa o IP do proxy como chave (balde global). Defina os IPs/CIDRs do proxy.',
+  )
+}
+
 app.register(fastifyMultipart, {
   limits: {
     fileSize: 5 * 1024 * 1024,
