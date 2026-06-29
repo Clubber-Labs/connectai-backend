@@ -146,6 +146,10 @@ async function assertSessionRenewable(userId: string) {
   const punished =
     user?.accountStatus === 'ANONYMIZED' ||
     user?.accountStatus === 'BANNED' ||
+    // SUSPENDED é barrada aqui SEMPRE — inclusive expirada (divergência
+    // intencional do login, que auto-cura via clearExpiredSuspension). NÃO troque
+    // por uma checagem de suspendedUntil sem rever esse contrato: o refresh força
+    // relogin ao fim da suspensão, e é o login que reativa a conta.
     user?.accountStatus === 'SUSPENDED'
   if (punished) {
     await revokeAllRefreshTokensForUser(userId)
