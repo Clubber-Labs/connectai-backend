@@ -43,7 +43,6 @@ import {
   findSpotForRenew,
   findSpotIdsInBbox,
   findSpotsByIds,
-  findTodayGenerationCount,
   renewSpotById,
   type SpotDetail,
   updateSpotById,
@@ -351,9 +350,11 @@ export async function generateSuggestions(
   const isPremium = await getUserPremiumStatus(userId)
   const limit = isPremium ? PREMIUM_DAILY_QUOTA : FREE_DAILY_QUOTA
 
-  // Rejeita excesso ANTES de chamar o Places (economia de custo). O teto real é
-  // garantido pelo consume atômico no fim.
-  if ((await findTodayGenerationCount(userId)) >= limit) {
+  // Consome ANTES de Places+IA: o teto atômico passa a limitar o custo externo,
+  // não só o contador. Sem estorno — uma falha cara também gasta a vaga, senão o
+  // retry imediato pagaria Places+IA de novo sem teto.
+  const quota = await consumeGenerationQuota(userId, limit)
+  if (!quota.allowed) {
     throw {
       statusCode: 429,
       message: `Limite diário de ${limit} gerações atingido`,
@@ -371,9 +372,7 @@ export async function generateSuggestions(
       ? `q:${intent.toLowerCase()}`
       : `${sortedCats.join(',')}|s:${sortedSubcats.join(',')}`,
   )
-  // Busca ANTES de consumir: se o Places/IA falhar, a quota não é gasta. Cache
-  // hit também passa por aqui e consome — decisão de produto. Places E IA rodam
-  // só no cache miss.
+  // Cache hit também consome (decisão de produto); Places E IA só no cache miss.
   let suggestions = await cache.get<EnhancedCandidate[]>(key)
   if (!suggestions) {
     // Critério único: o texto livre OU as frases que a IA compõe do perfil. As
@@ -430,21 +429,12 @@ export async function generateSuggestions(
     if (safe.length > 0 && social.length === 0) socialFilterEmptyTotal.inc()
     const forAI = social.length > 0 ? social : safe
 
-    const enhanced = await getSuggestionEnhancer().enhance(forAI, { criterion })
+    const enhanced = await getSuggestionEnhancer().enhance(forAI, {
+      criterion,
+    })
     // Cap de itens: devolve só as melhores (já ranqueadas pela IA).
     suggestions = enhanced.slice(0, MAX_SUGGESTIONS)
     await cache.set(key, suggestions, SUGGESTIONS_TTL_SECONDS)
-  }
-
-  // Consume atômico — teto à prova de corrida. O pre-flight acima (custo) não
-  // garante a vaga: sob concorrência extrema duas reqs passam o pre-flight e a
-  // segunda perde a corrida aqui (allowed=false → 429). Caso feliz é dominante.
-  const quota = await consumeGenerationQuota(userId, limit)
-  if (!quota.allowed) {
-    throw {
-      statusCode: 429,
-      message: `Limite diário de ${limit} gerações atingido`,
-    }
   }
 
   return { suggestions, remaining: Math.max(0, limit - quota.used) }
