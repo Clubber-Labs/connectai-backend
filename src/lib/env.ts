@@ -232,8 +232,9 @@ const baseSchema = z.object({
     .enum(['true', 'false', '1', '0'])
     .default('true')
     .transform((v) => v === 'true' || v === '1'),
-  // Se definido, /metrics exige `Authorization: Bearer <token>`. Sem ele, o
-  // endpoint é aberto (modelo pull) — proteja na borda de rede ou defina o token.
+  // Se definido, /metrics exige `Authorization: Bearer <token>`. Em produção com
+  // METRICS_ENABLED ligado o token é OBRIGATÓRIO (o boot falha sem ele — refine
+  // no fim do schema). Em dev/test, sem token, o endpoint fica aberto (conveniência).
   METRICS_TOKEN: z.string().min(1).optional(),
   // Cota de armazenamento de mídia por usuário (anti-abuso/custo). Default 1 GB.
   CHAT_USER_STORAGE_QUOTA_BYTES: z.coerce
@@ -385,6 +386,18 @@ const parsed = baseSchema
     message:
       'CORS_ALLOWED_ORIGINS é obrigatório em produção (CSV de origens permitidas).',
   })
+  // Fail-closed: em produção, /metrics não pode ficar aberto. Sem METRICS_TOKEN
+  // o endpoint expõe a superfície da API (rotas, tráfego) sem auth. Exige o token
+  // quando a coleta está ligada; para não expor, defina o token ou METRICS_ENABLED=false.
+  .refine(
+    (v) =>
+      !(v.NODE_ENV === 'production' && v.METRICS_ENABLED && !v.METRICS_TOKEN),
+    {
+      path: ['METRICS_TOKEN'],
+      message:
+        'METRICS_TOKEN é obrigatório em produção com METRICS_ENABLED ligado (senão /metrics fica aberto). Defina o token ou METRICS_ENABLED=false.',
+    },
+  )
   .parse(process.env)
 
 const STORAGE_DRIVER: 'cloudinary' | 'local' =
