@@ -385,6 +385,18 @@ const parsed = baseSchema
     message:
       'CORS_ALLOWED_ORIGINS é obrigatório em produção (CSV de origens permitidas).',
   })
+  // Fail-closed: em produção, /metrics não pode ficar aberto. Sem METRICS_TOKEN
+  // o endpoint expõe a superfície da API (rotas, tráfego) sem auth. Exige o token
+  // quando a coleta está ligada; para não expor, defina o token ou METRICS_ENABLED=false.
+  .refine(
+    (v) =>
+      !(v.NODE_ENV === 'production' && v.METRICS_ENABLED && !v.METRICS_TOKEN),
+    {
+      path: ['METRICS_TOKEN'],
+      message:
+        'METRICS_TOKEN é obrigatório em produção com METRICS_ENABLED ligado (senão /metrics fica aberto). Defina o token ou METRICS_ENABLED=false.',
+    },
+  )
   .parse(process.env)
 
 const STORAGE_DRIVER: 'cloudinary' | 'local' =

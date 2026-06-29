@@ -59,8 +59,9 @@ async function metricsPluginFn(app: FastifyInstance) {
     httpRequestDuration.observe(labels, reply.elapsedTime / 1000)
   })
 
-  // Quando METRICS_TOKEN está definido, /metrics exige Bearer auth. Sem token,
-  // o endpoint é aberto (modelo pull padrão; restrinja na borda de rede).
+  // /metrics exige Bearer auth quando METRICS_TOKEN está definido. Em produção o
+  // token é OBRIGATÓRIO (validado no env: refine METRICS_TOKEN+prod), então o
+  // caminho "aberto" abaixo só ocorre em dev/test.
   const token = env.METRICS_TOKEN
   const requireAuth = async (request: FastifyRequest, reply: FastifyReply) => {
     if (!isAuthorized(request.headers.authorization, token as string)) {
