@@ -40,7 +40,6 @@ export const resolveReportSchema = z.object({
 
 // Ação de moderação sobre o usuário denunciado (POST /reports/:id/moderate-user).
 // SUSPEND exige `days` (prazo da suspensão temporária); BAN é permanente.
-// União discriminada por `action`: SUSPEND exige `days`, BAN não tem `days`.
 // Diferente de `.refine()`, isto estreita o tipo no service (sem `as number`).
 export const moderateUserSchema = z.discriminatedUnion('action', [
   z.object({

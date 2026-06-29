@@ -298,8 +298,6 @@ export async function findOwnActiveSpots(
   })
 }
 
-// ── Lifecycle (reconciler) ───────────────────────────────────────────────────
-
 /** Spots ativos vencendo dentro de `leadMs` e ainda não lembrados. */
 export async function findSpotsNeedingRenewalReminder(
   now: Date,

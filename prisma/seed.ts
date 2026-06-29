@@ -14,8 +14,6 @@ import bcrypt from 'bcryptjs'
 
 const prisma = new PrismaClient()
 
-// ─── helpers ──────────────────────────────────────────────────────────────────
-
 function pick<T>(arr: readonly T[]): T {
   return arr[Math.floor(Math.random() * arr.length)]
 }
@@ -54,8 +52,6 @@ const CATEGORY_WEIGHTS: Record<(typeof CATEGORIES)[number], number> = {
 const WEIGHTED_CATEGORIES = CATEGORIES.flatMap((c) =>
   Array.from({ length: CATEGORY_WEIGHTS[c] }, () => c),
 )
-
-// ─── conteúdo realista (PT) ─────────────────────────────────────────────────────
 
 const EVENT_TITLES: Record<(typeof CATEGORIES)[number], string[]> = {
   PARTY: [
@@ -230,7 +226,6 @@ const SPOT_MESSAGES = [
 // loremflickr, então o seed nunca quebra. `key`/`format`/`size` espelham o que
 // o provider de upload gravaria.
 
-// Query de busca por categoria → capa temática coerente com o evento.
 const CATEGORY_IMAGE_QUERY: Record<string, string> = {
   PARTY: 'party celebration',
   MUSIC: 'concert live music',
@@ -377,8 +372,6 @@ function notificationCopy(
   }
 }
 
-// ─── seed ─────────────────────────────────────────────────────────────────────
-
 async function main() {
   console.log('🌱 Limpando banco...')
   await prisma.report.deleteMany()
@@ -400,7 +393,6 @@ async function main() {
   await prisma.follow.deleteMany()
   await prisma.user.deleteMany()
 
-  // ── 1. Usuários ─────────────────────────────────────────────────────────────
   console.log('👤 Criando usuários...')
 
   const adminDemo = await prisma.user.create({
@@ -480,7 +472,6 @@ async function main() {
   console.log('   ⭐ Premium fixo: premium@conectai.dev (premium_demo)')
   console.log('   📧 Login: qualquer email acima | Senha: senha123')
 
-  // ── 1b. Assinaturas premium ──────────────────────────────────────────────────
   // Invariante: todo usuário com isPremium=true tem uma subscription ATIVA
   // correspondente. O app deriva a UI de billing do par (isPremium, subscription);
   // um premium SEM subscription faz upgrade.tsx e manage.tsx se redirecionarem em
@@ -510,7 +501,6 @@ async function main() {
     `   ✓ ${premiumUsers.length} assinaturas ATIVAS (admin + premium)`,
   )
 
-  // ── 2. Follows ───────────────────────────────────────────────────────────────
   console.log('🔗 Criando follows...')
 
   const followPairs: Array<[string, string]> = []
@@ -572,7 +562,6 @@ async function main() {
 
   console.log(`   ✓ ${follows.length} follows aceitos + alguns pendentes`)
 
-  // ── 3. Eventos ───────────────────────────────────────────────────────────────
   console.log('📅 Criando eventos...')
 
   // Coordenadas aproximadas de Curitiba + arredores
@@ -663,7 +652,6 @@ async function main() {
     '   🔁 1 série recorrente semanal (premium_demo) com 4 ocorrências',
   )
 
-  // ── 3c. Imagens de eventos (upload webp) ─────────────────────────────────────
   // ~40% dos eventos públicos ganham 1–3 imagens, ordenadas por `order`. A capa
   // segue a categoria primária do evento (1ª de `categories`).
   console.log('🖼️  Criando imagens de eventos...')
@@ -790,7 +778,6 @@ async function main() {
     `   ✓ destaques criados (1 ativo, 1 agendado, 1 cancelado${adminEvent ? ' + 1 admin' : ''})`,
   )
 
-  // ── 4. Convites para eventos privados ────────────────────────────────────────
   if (privateEvents.length > 0) {
     console.log('✉️  Criando convites para eventos privados...')
     for (const event of privateEvents) {
@@ -810,7 +797,6 @@ async function main() {
     console.log('   ✓ Convites criados')
   }
 
-  // ── 5. Presenças ─────────────────────────────────────────────────────────────
   console.log('✅ Criando presenças...')
 
   const attendancePairs = new Set<string>()
@@ -829,7 +815,6 @@ async function main() {
       type: AttendanceType.CONFIRMED,
     })
 
-    // Outros usuários participam
     const participants = sample(
       users.filter((u) => u.id !== event.authorId),
       faker.number.int({ min: 1, max: 5 }),
@@ -863,7 +848,6 @@ async function main() {
   })
   console.log(`   ✓ ${attendancesToCreate.length} presenças criadas`)
 
-  // ── 6. Reações em eventos ────────────────────────────────────────────────────
   console.log('❤️  Criando reações em eventos...')
 
   const eventReactions: Array<{
@@ -892,7 +876,6 @@ async function main() {
   })
   console.log(`   ✓ ${eventReactions.length} reações em eventos`)
 
-  // ── 7. Comentários em eventos ────────────────────────────────────────────────
   console.log('💬 Criando comentários em eventos...')
 
   const eventComments: Array<{
@@ -915,7 +898,6 @@ async function main() {
   await prisma.comment.createMany({ data: eventComments })
   console.log(`   ✓ ${eventComments.length} comentários em eventos`)
 
-  // ── 8. Posts ─────────────────────────────────────────────────────────────────
   console.log('📝 Criando posts...')
 
   // Apenas usuários CONFIRMED podem postar
@@ -941,7 +923,6 @@ async function main() {
 
   console.log(`   ✓ ${posts.length} posts criados`)
 
-  // ── 8b. Imagens em posts (upload webp) ───────────────────────────────────────
   // ~40% dos posts ganham 1–4 imagens (RF: imagens em posts de evento). A capa
   // segue a categoria do evento do post, então combina com o tema.
   let postImageCount = 0
@@ -968,7 +949,6 @@ async function main() {
     console.log(`   ✓ ${postImages.length} imagens em posts`)
   }
 
-  // ── 9. Reações e comentários em posts ────────────────────────────────────────
   if (posts.length > 0) {
     console.log('💬 Criando reações e comentários em posts...')
 
@@ -1017,7 +997,6 @@ async function main() {
     )
   }
 
-  // ── 10. Chat (conversas e mensagens) ─────────────────────────────────────────
   console.log('💬 Criando conversas de chat...')
 
   function directKey(a: string, b: string) {
@@ -1135,7 +1114,6 @@ async function main() {
 
   console.log(`   ✓ ${conversationCount} conversas e ${messageCount} mensagens`)
 
-  // ── 11. Preferências de categoria ────────────────────────────────────────────
   // Necessárias pro botão "gerar sugestões" de spot (sem preferência → 400).
   console.log('🎯 Criando preferências de categoria...')
 
@@ -1153,7 +1131,6 @@ async function main() {
   })
   console.log(`   ✓ ${prefRows.length} preferências`)
 
-  // ── 12. Spots (rolês efêmeros ancorados num lugar) ───────────────────────────
   console.log('📍 Criando spots...')
 
   const HOUR = 3_600_000
@@ -1250,7 +1227,6 @@ async function main() {
   }
   console.log(`   ✓ ${spotCount} spots (1 vencendo, 1 upcoming, 1 privado)`)
 
-  // ── 13. Denúncias (moderação) ────────────────────────────────────────────────
   // Cobre os 5 alvos (evento, post, comentário, mensagem, usuário) e os estados
   // PENDING → REVIEWED → RESOLVED_*. admin_demo aparece como revisor.
   console.log('🚩 Criando denúncias...')
@@ -1351,7 +1327,6 @@ async function main() {
   }
   console.log(`   ✓ ${reportSpecs.length} denúncias (pendentes + resolvidas)`)
 
-  // ── 14. Bloqueios ────────────────────────────────────────────────────────────
   console.log('🚫 Criando bloqueios...')
 
   const blockPairs: Array<{ blockerId: string; blockedId: string }> = []
@@ -1367,7 +1342,6 @@ async function main() {
   await prisma.block.createMany({ data: blockPairs, skipDuplicates: true })
   console.log(`   ✓ ${blockPairs.length} bloqueios`)
 
-  // ── 15. Notificações (central in-app + push) ─────────────────────────────────
   // Tokens de push (Expo) e uma caixa de notificações pro premium_demo com
   // não-lidas (exercita o badge), além de algumas pra usuários aleatórios.
   console.log('🔔 Criando notificações e device tokens...')
@@ -1567,7 +1541,6 @@ async function main() {
       `(${unreadCount} não-lidas) — ${NOTIF_TYPES.length} tipos × ${users.length} usuários`,
   )
 
-  // ── 16. Consentimento LGPD (granular + auditoria) ────────────────────────────
   // Cada usuário tem um UserConsent + log GRANTED. premium/admin aceitam tudo;
   // alguns usuários revogam (REVOKED) ou ajustam (UPDATED) — alimenta a auditoria.
   console.log('🔐 Criando consentimentos LGPD...')
@@ -1644,7 +1617,6 @@ async function main() {
     `   ✓ ${consentRows.length} consentimentos, ${consentLogs.length} logs de auditoria`,
   )
 
-  // ── Resumo ───────────────────────────────────────────────────────────────────
   const featuredCount = promotionUsage.reduce((s, u) => s + u.count, 0)
 
   console.log('\n✅ Seed concluído!')

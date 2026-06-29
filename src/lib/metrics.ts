@@ -44,8 +44,6 @@ export const httpRequestsInFlight = new Gauge({
   registers: [registry],
 })
 
-// ── Business metrics ─────────────────────────────────────────────────────────
-
 // Quantas vezes a geração de sugestões caiu no template em vez da IA. `reason`
 // distingue falha do LLM, saída inválida ou descarte total (piso). Sobe em
 // silêncio hoje — esta métrica é o alarme de "IA degradada/offline".

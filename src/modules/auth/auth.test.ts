@@ -466,8 +466,6 @@ describe('MFA (TOTP)', () => {
     expect(login.json().mfaSetupRequired).toBe(true)
   })
 
-  // ── MFA obrigatório para ADMIN (matrícula forçada) ─────────────────────────
-
   it('admin sem MFA → login exige matrícula (mfaSetupRequired + enrollmentToken, sem token)', async () => {
     const user = await makeAdmin()
     const res = await app.inject({

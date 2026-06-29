@@ -15,8 +15,6 @@ import { env } from './env'
 const ISSUER = 'ConnectAI'
 const TOTP_WINDOW = 1
 
-// ── TOTP ─────────────────────────────────────────────────────────────────────
-
 function totpFor(secret: string, label = ISSUER): OTPAuth.TOTP {
   return new OTPAuth.TOTP({
     issuer: ISSUER,

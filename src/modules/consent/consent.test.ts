@@ -31,7 +31,6 @@ afterAll(async () => {
   await testPrisma.$disconnect()
 })
 
-// ────────────────────────────────────────────────────────────────────────────
 describe('POST /consent', () => {
   it('cria consentimento e retorna 201', async () => {
     const user = await makeUser()
@@ -137,7 +136,6 @@ describe('POST /consent', () => {
   })
 })
 
-// ────────────────────────────────────────────────────────────────────────────
 describe('GET /consent', () => {
   it('retorna 200 com o consentimento atual', async () => {
     const user = await makeUser()
@@ -191,7 +189,6 @@ describe('GET /consent', () => {
   })
 })
 
-// ────────────────────────────────────────────────────────────────────────────
 describe('PATCH /consent', () => {
   it('atualiza campo e retorna 200', async () => {
     const user = await makeUser()
@@ -295,7 +292,6 @@ describe('PATCH /consent', () => {
   })
 })
 
-// ────────────────────────────────────────────────────────────────────────────
 describe('consent_audit_logs constraints', () => {
   it('bloqueia action inválida no banco', async () => {
     const user = await makeUser()
@@ -319,7 +315,6 @@ describe('consent_audit_logs constraints', () => {
   })
 })
 
-// ────────────────────────────────────────────────────────────────────────────
 describe('DELETE /consent', () => {
   it('revoga todos os consentimentos e retorna 200 com revokedAt preenchido', async () => {
     const user = await makeUser()
@@ -414,7 +409,6 @@ describe('DELETE /consent', () => {
   })
 })
 
-// ────────────────────────────────────────────────────────────────────────────
 describe('GET /consent/export', () => {
   it('retorna 200 e cria log EXPORTED no audit', async () => {
     const user = await makeUser()
@@ -474,7 +468,6 @@ describe('GET /consent/export', () => {
   })
 })
 
-// ----------------------------------------------------------------------------
 describe('GET /consent/audit', () => {
   it('pagina por cursor e nao expoe ipAddress/userAgent', async () => {
     const user = await makeUser()
