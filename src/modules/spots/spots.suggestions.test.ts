@@ -133,6 +133,50 @@ describe('POST /spots/suggestions', () => {
     }
   })
 
+  it('sob concorrência, só as vencedoras da quota chamam Places/IA (F-06)', async () => {
+    const user = await makeUser()
+    await makeUserCategoryPreference(user.id, 'PARTY')
+
+    // 8 gerações concorrentes, texto distinto (cache MISS sempre), free=5 e
+    // 8 < rateLimit(10) → os 3 429 vêm da quota, não do limiter. O consume
+    // atômico roda ANTES do Places, então as perdedoras nem tocam o custo.
+    const results = await Promise.all(
+      Array.from({ length: 8 }, (_, i) =>
+        app.inject({
+          method: 'POST',
+          url: '/spots/suggestions',
+          headers: auth(user.id),
+          body: { ...POINT, query: `bar ${i}` },
+        }),
+      ),
+    )
+
+    expect(results.filter((r) => r.statusCode === 200)).toHaveLength(5)
+    expect(results.filter((r) => r.statusCode === 429)).toHaveLength(3)
+    expect(fakePlaces.calls).toBeLessThanOrEqual(5)
+  })
+
+  it('falha cara consome a quota — Places fora não vira custo ilimitado (F-06)', async () => {
+    const user = await makeUser()
+    await makeUserCategoryPreference(user.id, 'PARTY')
+    fakePlaces.override = () => {
+      throw new Error('Places indisponível')
+    }
+
+    // 5 tentativas falham (Places fora) e consomem a quota — não há estorno.
+    for (let i = 0; i < 5; i++) {
+      const r = await suggest(user.id)
+      expect(r.statusCode).toBe(500)
+    }
+    expect(fakePlaces.calls).toBe(5)
+
+    // 6ª: quota esgotada → 429 ANTES do Places (calls não sobe). Com estorno,
+    // esse loop pagaria Places indefinidamente.
+    const blocked = await suggest(user.id)
+    expect(blocked.statusCode).toBe(429)
+    expect(fakePlaces.calls).toBe(5)
+  })
+
   it('sem preferências retorna 400 e não consome quota', async () => {
     const user = await makeUser()
 

@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify'
+import { rateLimit } from '../../lib/rate-limit'
 import {
   deleteSpot,
   getMySpots,
@@ -25,10 +26,16 @@ export async function spotsRoutes(app: FastifyInstance) {
     postSpot,
   )
 
-  // Geração de sugestões (botão "gerar") — consome quota diária.
+  // Gera sugestões (botão "gerar"): consome quota diária e dispara Places+IA. A
+  // quota (consumida antes do trabalho) limita o custo externo; o rate-limit
+  // corta o burst de requisições e a carga de quem já estourou a quota.
   app.post(
     '/spots/suggestions',
-    { schema: { body: suggestionsSchema }, onRequest: [app.authenticate] },
+    {
+      schema: { body: suggestionsSchema },
+      onRequest: [app.authenticate],
+      config: { rateLimit: rateLimit(10) },
+    },
     postSuggestions,
   )
 
